@@ -15,8 +15,8 @@ Build a voice agent that calls an MIT student and convinces them to buy a pen. T
 ## Architecture: Chat-Supervisor Modular Monolith
 
 Dual-model pattern based on OpenAI's Realtime Agents reference architecture:
-- **Realtime Voice Model** (gpt-4o-mini-realtime): Handles natural conversation flow, greetings, rapport, delivery
-- **Supervisor Model** (GPT-4.1, text): Makes strategic decisions — persuasion strategy, tool calls, stage transitions, profile lookups
+- **Realtime Voice Model** (gpt-realtime-mini): Handles natural conversation flow, greetings, rapport, delivery
+- **Supervisor Model** (GPT-5.2, text): Makes strategic decisions — persuasion strategy, tool calls, stage transitions, profile lookups
 
 The system starts as a modular monolith with clean internal boundaries, designed for progressive decomposition into microservices.
 
@@ -36,12 +36,12 @@ The system starts as a modular monolith with clean internal boundaries, designed
 |  |              Voice Pipeline                          |  |
 |  |                                                      |  |
 |  |  Twilio <-> Media Stream <-> OpenAI Realtime (voice) |  |
-|  |  (or browser mic)          gpt-4o-mini-realtime      |  |
+|  |  (or browser mic)          gpt-realtime-mini         |  |
 |  |                                   |                  |  |
 |  |                          delegates complex tasks     |  |
 |  |                                   v                  |  |
 |  |                         OpenAI Supervisor (text)     |  |
-|  |                           GPT-4.1                    |  |
+|  |                           GPT-5.2                    |  |
 |  |                           - persuasion strategy      |  |
 |  |                           - tool calls               |  |
 |  |                           - stage transitions        |  |
@@ -135,7 +135,7 @@ Student's Phone -> Twilio PSTN -> Twilio Media Stream (WSS) -> FastAPI -> OpenAI
 
 ### Post-Call Pipeline
 
-Recorded audio -> Deepgram (transcription with speaker diarization) -> GPT-4.1 (analysis) -> Redis -> Next.js Dashboard
+Recorded audio -> Deepgram (transcription with speaker diarization) -> GPT-5.2 (analysis) -> Redis -> Next.js Dashboard
 
 **AI analysis covers:**
 - Persuasion tactic effectiveness
@@ -178,7 +178,7 @@ Separate services for Call Management, Research, and Analytics, communicating vi
 
 ## Local Distributed Testing Strategy
 
-Since we can't call real people at scale, we use **simulated callers** — GPT-4.1 instances playing the role of MIT students with varying personalities.
+Since we can't call real people at scale, we use **simulated callers** — GPT-5.2 instances playing the role of MIT students with varying personalities.
 
 ### Layer 1: Unit / Integration Tests (pytest)
 - Test each module in isolation
@@ -186,7 +186,7 @@ Since we can't call real people at scale, we use **simulated callers** — GPT-4
 - Test stage transitions, tool calls, profile enrichment logic
 
 ### Layer 2: Simulated Call Tests
-- Student Simulator: GPT-4.1 with personality prompts (easy_sell, hard_sell, busy_no_time, curious_but_broke)
+- Student Simulator: GPT-5.2 with personality prompts (easy_sell, hard_sell, busy_no_time, curious_but_broke)
 - Run in text mode (skip audio) for speed and cost
 - Each call produces transcript + outcome
 - Assert: completion rate, stage progression, no infinite loops
@@ -232,7 +232,7 @@ cord/
 │   │   │   ├── realtime.py     # OpenAI Realtime API client
 │   │   │   └── twilio_stream.py # Twilio Media Stream handler
 │   │   ├── agent/
-│   │   │   ├── supervisor.py   # GPT-4.1 supervisor logic
+│   │   │   ├── supervisor.py   # GPT-5.2 supervisor logic
 │   │   │   ├── state_machine.py # Conversation stages
 │   │   │   ├── tools.py        # Supervisor tool definitions
 │   │   │   └── prompts/        # Stage-specific prompts
@@ -274,9 +274,9 @@ cord/
 
 | Layer | Technology |
 |-------|-----------|
-| Voice (core) | OpenAI Realtime API (gpt-4o-mini-realtime) |
-| Supervisor AI | OpenAI GPT-4.1 |
-| Post-call analysis | OpenAI GPT-4.1 + Deepgram |
+| Voice (core) | OpenAI Realtime API (gpt-realtime-mini) |
+| Supervisor AI | OpenAI GPT-5.2 |
+| Post-call analysis | OpenAI GPT-5.2 + Deepgram |
 | Backend framework | Python FastAPI |
 | Telephony | Twilio (Voice + Media Streams) |
 | Message broker / state | Redis (streams, pub/sub, key-value) |

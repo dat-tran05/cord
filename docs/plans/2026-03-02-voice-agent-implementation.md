@@ -4,7 +4,7 @@
 
 **Goal:** Build a voice persuasion agent that calls MIT students to sell a pen, with a Next.js dashboard and progressive distributed systems architecture.
 
-**Architecture:** Chat-Supervisor modular monolith — OpenAI Realtime API (voice) + GPT-4.1 (supervisor) — FastAPI backend, Next.js 15 frontend, Redis state, Twilio telephony, Deepgram transcription.
+**Architecture:** Chat-Supervisor modular monolith — OpenAI Realtime API (voice) + GPT-5.2 (supervisor) — FastAPI backend, Next.js 15 frontend, Redis state, Twilio telephony, Deepgram transcription.
 
 **Tech Stack:** Python 3.12+, FastAPI, OpenAI SDK, Twilio, Deepgram, Redis, Next.js 15, Tailwind CSS, Docker
 
@@ -71,8 +71,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
-    openai_realtime_model: str = "gpt-4o-mini-realtime-preview"
-    openai_supervisor_model: str = "gpt-4.1"
+    openai_realtime_model: str = "gpt-realtime-mini"
+    openai_supervisor_model: str = "gpt-5.2"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -433,7 +433,7 @@ git commit -m "feat: add conversation state machine with stage transitions"
 
 ---
 
-## Phase 3: Supervisor Agent (GPT-4.1)
+## Phase 3: Supervisor Agent (GPT-5.2)
 
 ### Task 4: Supervisor Tool Definitions
 
@@ -787,7 +787,7 @@ Expected: All 5 tests PASS (sync tool call tests don't need API)
 
 ```bash
 git add backend/app/agent/prompts/ backend/app/agent/supervisor.py backend/tests/unit/test_supervisor.py
-git commit -m "feat: add supervisor agent with tool handling and GPT-4.1 integration"
+git commit -m "feat: add supervisor agent with tool handling and GPT-5.2 integration"
 ```
 
 ---
@@ -959,7 +959,7 @@ from app.voice.realtime import RealtimeSession, SessionConfig
 def test_session_config_defaults():
     config = SessionConfig(instructions="Sell a pen")
     assert config.voice == "alloy"
-    assert config.model == "gpt-4o-mini-realtime-preview"
+    assert config.model == "gpt-realtime-mini"
 
 
 def test_session_config_to_event():
@@ -1042,7 +1042,6 @@ class RealtimeSession:
         url = f"{REALTIME_URL}?model={self.config.model}"
         headers = {
             "Authorization": f"Bearer {settings.openai_api_key}",
-            "OpenAI-Beta": "realtime=v1",
         }
         self._ws = await websockets.connect(url, additional_headers=headers)
         self._connected = True
@@ -1821,7 +1820,7 @@ Expected: PASS
 
 ```bash
 git add backend/app/analytics/ backend/tests/unit/test_analyzer.py
-git commit -m "feat: add Deepgram transcription and GPT-4.1 post-call analysis"
+git commit -m "feat: add Deepgram transcription and GPT-5.2 post-call analysis"
 ```
 
 ---
@@ -2598,7 +2597,7 @@ class StudentSimulator:
     async def respond(self, agent_message: str) -> str:
         self._messages.append({"role": "user", "content": agent_message})
         response = await self._client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-5.2",
             messages=[
                 {"role": "system", "content": self._system},
                 *self._messages,
@@ -2983,7 +2982,7 @@ git commit -m "feat: add post-call analysis page with effectiveness scores, tact
 |-------|-------|-----------------|
 | 1 | 1-2 | Working FastAPI app with Redis |
 | 2 | 3 | Conversation state machine |
-| 3 | 4-5 | GPT-4.1 supervisor with tool calling |
+| 3 | 4-5 | GPT-5.2 supervisor with tool calling |
 | 4 | 6 | Pre-call research/enrichment |
 | 5 | 7-8 | OpenAI Realtime API client + voice pipeline |
 | 6 | 9-10 | REST API + WebSocket for dashboard |
