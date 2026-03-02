@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { api, type CallDetail } from "@/lib/api";
+import { VoiceChat } from "@/components/VoiceChat";
 
 const STAGE_COLORS: Record<string, string> = {
   pre_call: "bg-zinc-700",
@@ -13,87 +14,89 @@ const STAGE_COLORS: Record<string, string> = {
   wrap_up: "bg-zinc-600",
 };
 
-export default function CallPage() {
-  const { id } = useParams<{ id: string }>();
-  const [call, setCall] = useState<CallDetail | null>(null);
+function TextCallView({ call, id }: { call: CallDetail; id: string }) {
+  const [localCall, setLocalCall] = useState(call);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (id) api.calls.get(id).then(setCall).catch(() => {});
-  }, [id]);
+    setLocalCall(call);
+  }, [call]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [call?.transcript]);
+  }, [localCall.transcript]);
 
   const sendMessage = async () => {
-    if (!input.trim() || !id || sending) return;
+    if (!input.trim() || sending) return;
     setSending(true);
     const message = input;
     setInput("");
 
-    // Optimistic update
-    setCall((prev) =>
-      prev ? { ...prev, transcript: [...prev.transcript, { role: "student", content: message }] } : prev
-    );
+    setLocalCall((prev) => ({
+      ...prev,
+      transcript: [...prev.transcript, { role: "student", content: message }],
+    }));
 
     try {
       const result = await api.calls.sendText(id, message);
-      setCall((prev) =>
-        prev
-          ? {
-              ...prev,
-              stage: result.stage,
-              transcript: [...prev.transcript, { role: "agent", content: result.response }],
-            }
-          : prev
-      );
+      setLocalCall((prev) => ({
+        ...prev,
+        stage: result.stage,
+        transcript: [
+          ...prev.transcript,
+          { role: "agent", content: result.response },
+        ],
+      }));
     } catch {
-      setCall((prev) =>
-        prev
-          ? {
-              ...prev,
-              transcript: [...prev.transcript, { role: "agent", content: "[Error: failed to get response]" }],
-            }
-          : prev
-      );
+      setLocalCall((prev) => ({
+        ...prev,
+        transcript: [
+          ...prev.transcript,
+          { role: "agent", content: "[Error: failed to get response]" },
+        ],
+      }));
     } finally {
       setSending(false);
     }
   };
 
   const endCall = async () => {
-    if (!id) return;
     await api.calls.end(id);
-    setCall((prev) => (prev ? { ...prev, is_active: false } : prev));
+    setLocalCall((prev) => ({ ...prev, is_active: false }));
   };
-
-  if (!call) return <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">Loading...</div>;
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      {/* Header */}
       <header className="border-b border-zinc-800 p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <a href="/" className="text-zinc-400 hover:text-zinc-200 text-sm">&larr; Back</a>
-          <h1 className="font-semibold">Call {call.call_id}</h1>
-          <span className={`text-xs px-2 py-0.5 rounded ${STAGE_COLORS[call.stage] || "bg-zinc-700"}`}>
-            {call.stage}
+          <a href="/" className="text-zinc-400 hover:text-zinc-200 text-sm">
+            &larr; Back
+          </a>
+          <h1 className="font-semibold">Call {localCall.call_id}</h1>
+          <span
+            className={`text-xs px-2 py-0.5 rounded ${STAGE_COLORS[localCall.stage] || "bg-zinc-700"}`}
+          >
+            {localCall.stage}
           </span>
         </div>
-        {call.is_active && (
-          <button onClick={endCall} className="text-red-400 hover:text-red-300 text-sm">
+        {localCall.is_active && (
+          <button
+            onClick={endCall}
+            className="text-red-400 hover:text-red-300 text-sm"
+          >
             End Call
           </button>
         )}
       </header>
 
-      {/* Transcript */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {call.transcript.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "agent" ? "justify-start" : "justify-end"}`}>
+        {localCall.transcript.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex ${msg.role === "agent" ? "justify-start" : "justify-end"}`}
+          >
             <div
               className={`max-w-md px-4 py-2 rounded-2xl text-sm ${
                 msg.role === "agent"
@@ -108,8 +111,7 @@ export default function CallPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      {call.is_active && (
+      {localCall.is_active && (
         <div className="border-t border-zinc-800 p-4">
           <div className="flex gap-2 max-w-4xl mx-auto">
             <input
@@ -131,4 +133,44 @@ export default function CallPage() {
       )}
     </main>
   );
+}
+
+export default function CallPage() {
+  const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const [call, setCall] = useState<CallDetail | null>(null);
+  const [mode, setMode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    // Check URL param first, then fetch call data
+    const urlMode = searchParams.get("mode");
+    if (urlMode) {
+      setMode(urlMode);
+    }
+    api.calls
+      .get(id)
+      .then((data) => {
+        setCall(data);
+        // If mode not set by URL param, infer from call data
+        if (!urlMode) {
+          setMode((data as CallDetail & { mode?: string }).mode || "text");
+        }
+      })
+      .catch(() => {});
+  }, [id, searchParams]);
+
+  if (!call || !mode) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
+        Loading...
+      </div>
+    );
+  }
+
+  if (mode === "browser") {
+    return <VoiceChat callId={id} targetProfile={{}} />;
+  }
+
+  return <TextCallView call={call} id={id} />;
 }

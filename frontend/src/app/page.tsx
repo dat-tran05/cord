@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, type Call, type Target } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { CallCard } from "@/components/CallCard";
 import { NewCallDialog } from "@/components/NewCallDialog";
 
 export default function Dashboard() {
+  const router = useRouter();
   const [targets, setTargets] = useState<Target[]>([]);
   const [activeCalls, setActiveCalls] = useState<Call[]>([]);
   const [showNewCall, setShowNewCall] = useState(false);
@@ -15,10 +17,13 @@ export default function Dashboard() {
     api.targets.list().then(setTargets).catch(() => {});
   }, []);
 
-  const handleNewCall = async (targetId: string) => {
-    const call = await api.calls.create({ target_id: targetId, mode: "text" });
+  const handleNewCall = async (targetId: string, mode: string) => {
+    const call = await api.calls.create({ target_id: targetId, mode });
     setActiveCalls((prev) => [...prev, call]);
     setShowNewCall(false);
+    if (mode === "browser") {
+      router.push(`/calls/${call.call_id}?mode=browser`);
+    }
   };
 
   return (
