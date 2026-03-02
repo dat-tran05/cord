@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.models import CallCreate, CallResponse, TextInput
 from app.api.routes.targets import get_target_data
+from app.analytics.analyzer import CallAnalyzer
 from app.voice.pipeline import VoicePipeline, CallConfig
 
 router = APIRouter(prefix="/api/calls", tags=["calls"])
@@ -61,6 +62,21 @@ async def end_call(call_id: str):
         raise HTTPException(status_code=404, detail="Call not found")
     await pipeline.stop()
     return {"status": "ended", "transcript": pipeline.transcript}
+
+
+@router.get("/{call_id}/analysis")
+async def get_analysis(call_id: str):
+    pipeline = _pipelines.get(call_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Call not found")
+    if pipeline.is_active:
+        raise HTTPException(status_code=400, detail="Call is still active. End it first.")
+    if not pipeline.transcript:
+        raise HTTPException(status_code=400, detail="No transcript available")
+
+    analyzer = CallAnalyzer()
+    analysis = await analyzer.analyze(pipeline.transcript)
+    return analysis
 
 
 @router.get("/{call_id}")

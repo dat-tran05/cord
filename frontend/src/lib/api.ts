@@ -52,5 +52,20 @@ export const api = {
       }),
     end: (callId: string) =>
       fetchApi<{ status: string; transcript: any[] }>(`/api/calls/${callId}/end`, { method: "POST" }),
+    getAnalysis: (callId: string) =>
+      fetchApi<Analysis>(`/api/calls/${callId}/analysis`),
   },
 };
+
+export interface Analysis {
+  effectiveness_score: number;
+  tactics_used: string[];
+  tactics_that_worked: string[];
+  tactics_that_failed: string[];
+  objections_encountered: string[];
+  objection_handling_quality: number;
+  key_moments: { timestamp_approx: string; description: string; impact: string }[];
+  sentiment_arc: string;
+  improvement_suggestions: string[];
+  outcome: string;
+}

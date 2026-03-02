@@ -39,18 +39,29 @@ export default function CallPage() {
       prev ? { ...prev, transcript: [...prev.transcript, { role: "student", content: message }] } : prev
     );
 
-    const result = await api.calls.sendText(id, message);
-
-    setCall((prev) =>
-      prev
-        ? {
-            ...prev,
-            stage: result.stage,
-            transcript: [...prev.transcript, { role: "agent", content: result.response }],
-          }
-        : prev
-    );
-    setSending(false);
+    try {
+      const result = await api.calls.sendText(id, message);
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              stage: result.stage,
+              transcript: [...prev.transcript, { role: "agent", content: result.response }],
+            }
+          : prev
+      );
+    } catch {
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              transcript: [...prev.transcript, { role: "agent", content: "[Error: failed to get response]" }],
+            }
+          : prev
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
   const endCall = async () => {

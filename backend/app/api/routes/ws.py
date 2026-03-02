@@ -1,5 +1,3 @@
-import asyncio
-import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -48,6 +46,8 @@ async def events_websocket(ws: WebSocket):
                 await ws.send_text(message["data"])
     except WebSocketDisconnect:
         pass
+    except Exception:
+        logger.exception("WebSocket event stream error")
     finally:
         await pubsub.unsubscribe(EVENT_CHANNEL)
         manager.disconnect(ws)

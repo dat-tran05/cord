@@ -3,6 +3,17 @@ from unittest.mock import AsyncMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.api.routes import targets as targets_module, calls as calls_module
+
+
+@pytest.fixture(autouse=True)
+def clear_state():
+    """Clear in-memory stores between tests to prevent state pollution."""
+    targets_module._targets.clear()
+    calls_module._pipelines.clear()
+    yield
+    targets_module._targets.clear()
+    calls_module._pipelines.clear()
 
 
 @pytest.fixture

@@ -1,31 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-
-interface Analysis {
-  effectiveness_score: number;
-  tactics_used: string[];
-  tactics_that_worked: string[];
-  tactics_that_failed: string[];
-  objections_encountered: string[];
-  objection_handling_quality: number;
-  key_moments: { timestamp_approx: string; description: string; impact: string }[];
-  sentiment_arc: string;
-  improvement_suggestions: string[];
-  outcome: string;
-}
+import { api, type Analysis } from "@/lib/api";
 
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
-      // TODO: wire up to backend analysis endpoint
-      // For now, show placeholder
-      setLoading(false);
+      api.calls
+        .getAnalysis(id)
+        .then(setAnalysis)
+        .catch((e) => setError(e.message))
+        .finally(() => setLoading(false));
     }
   }, [id]);
 
@@ -94,6 +84,11 @@ export default function AnalysisPage() {
                 ))}
               </ul>
             </div>
+          </div>
+        ) : error ? (
+          <div className="bg-red-950 border border-red-800 rounded-lg p-8 text-center">
+            <p className="text-red-300">{error}</p>
+            <p className="text-zinc-500 text-sm mt-2">Make sure the call has ended and has a transcript.</p>
           </div>
         ) : (
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
