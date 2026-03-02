@@ -21,6 +21,7 @@ class SessionConfig:
     output_audio_format: str = "pcm16"
     tools: list[dict] = field(default_factory=list)
     turn_detection: dict = field(default_factory=lambda: {"type": "server_vad"})
+    input_audio_transcription: dict = field(default_factory=lambda: {"model": "gpt-4o-mini-transcribe"})
 
     def to_session_update_event(self) -> dict:
         return {
@@ -31,6 +32,7 @@ class SessionConfig:
                 "voice": self.voice,
                 "input_audio_format": self.input_audio_format,
                 "output_audio_format": self.output_audio_format,
+                "input_audio_transcription": self.input_audio_transcription,
                 "tools": self.tools,
                 "turn_detection": self.turn_detection,
             },
