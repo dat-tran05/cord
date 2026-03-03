@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app import db
-from app.api.routes.targets import _run_enrichment
+from app.services.handlers import handle_enrichment, handle_enrichment_failure
 
 
 @pytest.fixture(autouse=True)
@@ -40,48 +40,52 @@ def sample_enriched():
     }
 
 
-async def test_enrichment_sets_status_enriched(sample_target, sample_enriched):
+async def test_enrichment_handler_sets_enriched(sample_target, sample_enriched):
     target_id = "test-001"
     await db.create_target(target_id, sample_target)
 
     with patch(
-        "app.api.routes.targets.ProfileEnricher.enrich",
+        "app.services.handlers.ProfileEnricher.enrich",
         new_callable=AsyncMock,
         return_value=sample_enriched,
     ):
-        await _run_enrichment(target_id, sample_target)
+        await handle_enrichment({"target_id": target_id, "target_data": sample_target})
 
     target = await db.get_target(target_id)
     assert target["enrichment_status"] == "enriched"
     assert target["enriched_profile"]["talking_points"] == ["point1"]
 
 
-async def test_enrichment_sets_status_failed_on_error(sample_target):
+async def test_enrichment_handler_raises_on_error(sample_target):
     target_id = "test-002"
     await db.create_target(target_id, sample_target)
 
     with patch(
-        "app.api.routes.targets.ProfileEnricher.enrich",
+        "app.services.handlers.ProfileEnricher.enrich",
         side_effect=Exception("API error"),
     ):
-        await _run_enrichment(target_id, sample_target)
-
-    target = await db.get_target(target_id)
-    assert target["enrichment_status"] == "failed"
-    assert target["enriched_profile"] is None
+        with pytest.raises(Exception, match="API error"):
+            await handle_enrichment({"target_id": target_id, "target_data": sample_target})
 
 
-async def test_enrichment_transitions_through_enriching(sample_target, sample_enriched):
-    """Verify status goes pending -> enriching -> enriched."""
+async def test_failure_callback_sets_failed(sample_target):
     target_id = "test-003"
     await db.create_target(target_id, sample_target)
 
-    # Check initial status
+    await handle_enrichment_failure({"target_id": target_id, "target_data": sample_target}, "err")
+
+    target = await db.get_target(target_id)
+    assert target["enrichment_status"] == "failed"
+
+
+async def test_enrichment_transitions_through_enriching(sample_target, sample_enriched):
+    target_id = "test-004"
+    await db.create_target(target_id, sample_target)
+
     target = await db.get_target(target_id)
     assert target["enrichment_status"] == "pending"
 
     statuses_seen = []
-
     original_update = db.update_enrichment
 
     async def tracking_update(tid, status, profile=None):
@@ -90,12 +94,12 @@ async def test_enrichment_transitions_through_enriching(sample_target, sample_en
 
     with (
         patch(
-            "app.api.routes.targets.ProfileEnricher.enrich",
+            "app.services.handlers.ProfileEnricher.enrich",
             new_callable=AsyncMock,
             return_value=sample_enriched,
         ),
-        patch("app.api.routes.targets.db.update_enrichment", side_effect=tracking_update),
+        patch("app.services.handlers.db.update_enrichment", side_effect=tracking_update),
     ):
-        await _run_enrichment(target_id, sample_target)
+        await handle_enrichment({"target_id": target_id, "target_data": sample_target})
 
     assert statuses_seen == ["enriching", "enriched"]

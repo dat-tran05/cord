@@ -12,7 +12,7 @@ async def setup_db():
     """Use in-memory SQLite for each test."""
     await db.init_db(":memory:")
     calls_module._pipelines.clear()
-    with patch("app.api.routes.targets._run_enrichment", new_callable=AsyncMock):
+    with patch("app.services.task_queue.TaskQueue.enqueue", new_callable=AsyncMock):
         yield
     await db.close_db()
 

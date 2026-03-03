@@ -6,12 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import calls, targets, ws, ws_voice
 from app.config import settings
 from app.db import init_db, close_db
+from app.services.handlers import register_all_handlers
+from app.services.task_queue import TaskQueue, TaskWorker
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    register_all_handlers()
+    worker = TaskWorker(TaskQueue())
+    await worker.start()
     yield
+    await worker.stop()
     await close_db()
 
 
