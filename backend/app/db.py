@@ -125,6 +125,13 @@ def _row_to_target(row: aiosqlite.Row) -> dict:
     }
 
 
+async def delete_target(target_id: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute("DELETE FROM targets WHERE id = ?", (target_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
 # --- Calls ---
 
 

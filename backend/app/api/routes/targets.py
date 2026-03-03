@@ -45,5 +45,12 @@ async def get_target(target_id: str):
     return target
 
 
+@router.delete("/{target_id}", status_code=204)
+async def delete_target(target_id: str):
+    deleted = await db.delete_target(target_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Target not found")
+
+
 async def get_target_data(target_id: str) -> dict | None:
     return await db.get_target(target_id)

@@ -1,6 +1,9 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+export async function fetchApi<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
@@ -45,15 +48,32 @@ export interface CallDetail {
 export const api = {
   targets: {
     list: () => fetchApi<Target[]>("/api/targets"),
-    create: (data: Omit<Target, "id" | "enrichment_status" | "enriched_profile">) =>
-      fetchApi<Target>("/api/targets", { method: "POST", body: JSON.stringify(data) }),
+    create: (
+      data: Omit<Target, "id" | "enrichment_status" | "enriched_profile">,
+    ) =>
+      fetchApi<Target>("/api/targets", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      fetch(`${API_BASE}/api/targets/${id}`, { method: "DELETE" }).then(
+        (res) => {
+          if (!res.ok) throw new Error(`API error: ${res.status}`);
+        },
+      ),
   },
   calls: {
     create: (data: { target_id: string; mode: string }) =>
-      fetchApi<Call>("/api/calls", { method: "POST", body: JSON.stringify(data) }),
+      fetchApi<Call>("/api/calls", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
     get: (callId: string) => fetchApi<CallDetail>(`/api/calls/${callId}`),
     end: (callId: string) =>
-      fetchApi<{ status: string; transcript: any[] }>(`/api/calls/${callId}/end`, { method: "POST" }),
+      fetchApi<{ status: string; transcript: any[] }>(
+        `/api/calls/${callId}/end`,
+        { method: "POST" },
+      ),
     getAnalysis: (callId: string) =>
       fetchApi<Analysis>(`/api/calls/${callId}/analysis`),
   },
@@ -66,7 +86,11 @@ export interface Analysis {
   tactics_that_failed: string[];
   objections_encountered: string[];
   objection_handling_quality: number;
-  key_moments: { timestamp_approx: string; description: string; impact: string }[];
+  key_moments: {
+    timestamp_approx: string;
+    description: string;
+    impact: string;
+  }[];
   sentiment_arc: string;
   improvement_suggestions: string[];
   outcome: string;

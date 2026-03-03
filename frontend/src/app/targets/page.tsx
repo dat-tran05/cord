@@ -10,6 +10,7 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  Trash2,
 } from "lucide-react";
 import { api, type Target } from "@/lib/api";
 import { Navbar } from "@/components/Navbar";
@@ -23,6 +24,17 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function TargetsPage() {
   const [targets, setTargets] = useState<Target[]>([]);
@@ -203,20 +215,50 @@ export default function TargetsPage() {
                             </div>
                           )}
                         </div>
-                        {t.enriched_profile && (
-                          <button
-                            onClick={() =>
-                              setExpandedId(isExpanded ? null : t.id)
-                            }
-                            className="ml-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          >
-                            {isExpanded ? (
-                              <ChevronUp className="size-4" />
-                            ) : (
-                              <ChevronDown className="size-4" />
-                            )}
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {t.enriched_profile && (
+                            <button
+                              onClick={() =>
+                                setExpandedId(isExpanded ? null : t.id)
+                              }
+                              className="ml-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="size-4" />
+                              ) : (
+                                <ChevronDown className="size-4" />
+                              )}
+                            </button>
+                          )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-red-400">
+                                <Trash2 className="size-4" />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete target?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete <span className="font-medium text-foreground">{t.name}</span> and cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-red-600 hover:bg-red-700"
+                                  onClick={() => {
+                                    api.targets.delete(t.id).then(() => {
+                                      setTargets((prev) => prev.filter((x) => x.id !== t.id));
+                                    });
+                                  }}
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </div>
                       {isExpanded && t.enriched_profile && (
                         <div className="mt-3 space-y-3 rounded-md border bg-muted/50 p-3">
