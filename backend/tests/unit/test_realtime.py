@@ -25,6 +25,7 @@ def test_session_config_to_event():
     assert session["audio"]["input"]["format"] == {"type": "audio/pcm", "rate": 24000}
     assert session["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24000}
     assert session["audio"]["input"]["transcription"]["model"] == "gpt-4o-mini-transcribe"
+    assert session["audio"]["input"]["transcription"]["language"] == "en"
     assert session["audio"]["input"]["turn_detection"]["type"] == "server_vad"
     assert len(session["tools"]) == 1
 

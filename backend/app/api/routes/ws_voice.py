@@ -204,16 +204,15 @@ async def _outbound_loop(
                 await ws.send_json({"type": "audio", "audio": audio_b64})
 
         elif event_type == "response.output_audio_transcript.delta":
-            # Partial agent transcript (GA event name)
-            delta = event.get("delta", "")
-            if delta:
-                await ws.send_json({"type": "transcript", "role": "agent", "text": delta})
+            # Audio plays in real-time; full transcript sent on .done
+            pass
 
         elif event_type == "response.output_audio_transcript.done":
-            # Full agent transcript completed (GA event name)
+            # Full agent transcript completed (GA event name) — send as single message
             transcript = event.get("transcript", "")
             if transcript:
                 pipeline._transcript.append({"role": "agent", "content": transcript})
+                await ws.send_json({"type": "transcript", "role": "agent", "text": transcript})
                 await redis.publish_event("transcript.update", {
                     "call_id": pipeline.config.call_id,
                     "stage": pipeline.state_machine.current_stage.value,

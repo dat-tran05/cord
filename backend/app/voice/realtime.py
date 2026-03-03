@@ -37,7 +37,7 @@ class SessionConfig:
     tools: list[dict] = field(default_factory=list)
     turn_detection: dict = field(default_factory=lambda: {"type": "server_vad"})
     input_audio_transcription: dict = field(
-        default_factory=lambda: {"model": "gpt-4o-mini-transcribe"}
+        default_factory=lambda: {"model": "gpt-4o-mini-transcribe", "language": "en"}
     )
 
     def to_session_update_event(self) -> dict:
