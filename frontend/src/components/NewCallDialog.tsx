@@ -1,6 +1,17 @@
 "use client";
 import { useState } from "react";
+import { MessageSquare, Mic, X } from "lucide-react";
 import type { Target } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Props {
   targets: Target[];
@@ -13,67 +24,109 @@ export function NewCallDialog({ targets, onStart, onClose }: Props) {
   const [mode, setMode] = useState<"text" | "browser">("text");
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md">
-        <h2 className="text-lg font-semibold mb-4">Start New Call</h2>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Start New Call</DialogTitle>
+          <DialogDescription>
+            Select a target and choose your conversation mode.
+          </DialogDescription>
+        </DialogHeader>
+
         {targets.length === 0 ? (
-          <p className="text-zinc-400 text-sm mb-4">No targets yet. Add one on the Targets page first.</p>
+          <div className="rounded-lg border border-dashed p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No targets yet. Add one on the{" "}
+              <a href="/targets" className="text-primary underline underline-offset-4">
+                Targets page
+              </a>{" "}
+              first.
+            </p>
+          </div>
         ) : (
-          <>
-            <select
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-sm mb-4"
-            >
-              <option value="">Select a target...</option>
-              {targets.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} — {t.school} {t.major}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-4">
+            {/* Target selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Target
+              </label>
+              <select
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <option value="">Select a target...</option>
+                {targets.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — {t.school} {t.major}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {/* Mode selector */}
-            <div className="mb-4">
-              <label className="text-sm text-zinc-400 block mb-2">Mode</label>
-              <div className="flex gap-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setMode("text")}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition border ${
+                  className={cn(
+                    "flex flex-col items-center gap-2 rounded-lg border p-4 transition-all",
                     mode === "text"
-                      ? "bg-zinc-100 text-zinc-900 border-zinc-100"
-                      : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500"
-                  }`}
+                      ? "border-primary bg-primary/5 text-foreground shadow-sm"
+                      : "border-border text-muted-foreground hover:border-border/80 hover:bg-muted/50"
+                  )}
                 >
-                  Text
+                  <MessageSquare
+                    className={cn(
+                      "size-5",
+                      mode === "text" ? "text-primary" : ""
+                    )}
+                  />
+                  <span className="text-sm font-medium">Text</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Type as the student
+                  </span>
                 </button>
                 <button
                   onClick={() => setMode("browser")}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition border ${
+                  className={cn(
+                    "flex flex-col items-center gap-2 rounded-lg border p-4 transition-all",
                     mode === "browser"
-                      ? "bg-zinc-100 text-zinc-900 border-zinc-100"
-                      : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500"
-                  }`}
+                      ? "border-primary bg-primary/5 text-foreground shadow-sm"
+                      : "border-border text-muted-foreground hover:border-border/80 hover:bg-muted/50"
+                  )}
                 >
-                  Voice
+                  <Mic
+                    className={cn(
+                      "size-5",
+                      mode === "browser" ? "text-primary" : ""
+                    )}
+                  />
+                  <span className="text-sm font-medium">Voice</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Speak with the agent
+                  </span>
                 </button>
               </div>
             </div>
-          </>
+          </div>
         )}
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => selectedId && onStart(selectedId, mode)}
             disabled={!selectedId}
-            className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-200 transition disabled:opacity-40"
           >
             Start Call
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

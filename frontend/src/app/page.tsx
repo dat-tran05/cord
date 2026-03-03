@@ -1,10 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus, Radio } from "lucide-react";
 import { api, type Call, type Target } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { CallCard } from "@/components/CallCard";
 import { NewCallDialog } from "@/components/NewCallDialog";
+import { Navbar } from "@/components/Navbar";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -27,32 +32,57 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
-      <div className="max-w-6xl mx-auto">
-        <header className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">CORD</h1>
-            <p className="text-zinc-400 text-sm">Voice Persuasion Agent</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className={`text-xs px-2 py-1 rounded ${connected ? "bg-green-900 text-green-300" : "bg-red-900 text-red-300"}`}>
-              {connected ? "Connected" : "Disconnected"}
-            </span>
-            <button
-              onClick={() => setShowNewCall(true)}
-              className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-200 transition"
-            >
-              + New Call
-            </button>
-          </div>
-        </header>
+    <div className="min-h-screen bg-background">
+      <Navbar
+        trailing={
+          <>
+            <Badge variant={connected ? "default" : "destructive"} className="gap-1.5">
+              <span
+                className={`size-1.5 rounded-full ${
+                  connected ? "bg-green-400 animate-pulse" : "bg-red-400"
+                }`}
+              />
+              {connected ? "Live" : "Offline"}
+            </Badge>
+            <Button size="sm" onClick={() => setShowNewCall(true)}>
+              <Plus className="size-4" />
+              New Call
+            </Button>
+          </>
+        }
+      />
 
-        <section className="mb-8">
-          <h2 className="text-lg font-semibold mb-4">Active Calls</h2>
+      <main className="mx-auto max-w-6xl space-y-8 p-6">
+        {/* Active Calls */}
+        <section>
+          <div className="mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Active Calls</h2>
+            {activeCalls.length > 0 && (
+              <Badge variant="secondary">{activeCalls.length}</Badge>
+            )}
+          </div>
           {activeCalls.length === 0 ? (
-            <p className="text-zinc-500 text-sm">No active calls. Start one above.</p>
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-muted">
+                  <Phone className="size-5 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  No active calls. Start one to begin a conversation.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setShowNewCall(true)}
+                >
+                  <Plus className="size-4" />
+                  Start a Call
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               {activeCalls.map((call) => (
                 <CallCard key={call.call_id} call={call} />
               ))}
@@ -60,22 +90,39 @@ export default function Dashboard() {
           )}
         </section>
 
+        {/* Events */}
         <section>
-          <h2 className="text-lg font-semibold mb-4">Recent Events</h2>
-          <div className="bg-zinc-900 rounded-lg p-4 max-h-64 overflow-y-auto font-mono text-xs">
-            {events.length === 0 ? (
-              <p className="text-zinc-500">Waiting for events...</p>
-            ) : (
-              events.map((e, i) => (
-                <div key={i} className="py-1 border-b border-zinc-800">
-                  <span className="text-zinc-500">{e.event}</span>{" "}
-                  <span className="text-zinc-300">{JSON.stringify(e, null, 0)}</span>
-                </div>
-              ))
-            )}
+          <div className="mb-4 flex items-center gap-2">
+            <Radio className="size-4 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Event Stream</h2>
           </div>
+          <Card>
+            <CardContent className="max-h-72 overflow-y-auto p-0">
+              <div className="divide-y divide-border font-mono text-xs">
+                {events.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-muted-foreground font-sans text-sm">
+                    Waiting for events...
+                  </p>
+                ) : (
+                  events.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex gap-3 px-4 py-2 hover:bg-muted/50 transition-colors"
+                    >
+                      <Badge variant="outline" className="shrink-0 font-mono text-[10px]">
+                        {e.event}
+                      </Badge>
+                      <span className="truncate text-muted-foreground">
+                        {JSON.stringify(e, null, 0)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </section>
-      </div>
+      </main>
 
       {showNewCall && (
         <NewCallDialog
@@ -84,6 +131,23 @@ export default function Dashboard() {
           onClose={() => setShowNewCall(false)}
         />
       )}
-    </main>
+    </div>
+  );
+}
+
+function Phone({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
   );
 }

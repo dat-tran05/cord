@@ -60,6 +60,8 @@ async def voice_websocket(ws: WebSocket, call_id: str):
         pipeline.state_machine.transition(ConversationStage.INTRO)
 
         # Build realtime session with tools
+        # Realtime API uses a flat tool format: name/description/parameters
+        # sit at the top level alongside "type", NOT nested in a "function" key.
         session_config = SessionConfig(
             instructions=pipeline._build_realtime_instructions(),
             tools=[
@@ -70,8 +72,14 @@ async def voice_websocket(ws: WebSocket, call_id: str):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "question": {"type": "string", "description": "What you need the supervisor to decide"},
-                            "context": {"type": "string", "description": "Relevant conversation context"},
+                            "question": {
+                                "type": "string",
+                                "description": "What you need the supervisor to decide",
+                            },
+                            "context": {
+                                "type": "string",
+                                "description": "Relevant conversation context",
+                            },
                         },
                         "required": ["question"],
                     },
@@ -189,20 +197,20 @@ async def _outbound_loop(
     async for event in realtime.receive_events():
         event_type = event.get("type", "")
 
-        if event_type == "response.audio.delta":
-            # Forward audio chunk to browser
+        if event_type == "response.output_audio.delta":
+            # Forward audio chunk to browser (GA event name)
             audio_b64 = event.get("delta", "")
             if audio_b64:
                 await ws.send_json({"type": "audio", "audio": audio_b64})
 
-        elif event_type == "response.audio_transcript.delta":
-            # Partial agent transcript
+        elif event_type == "response.output_audio_transcript.delta":
+            # Partial agent transcript (GA event name)
             delta = event.get("delta", "")
             if delta:
                 await ws.send_json({"type": "transcript", "role": "agent", "text": delta})
 
-        elif event_type == "response.audio_transcript.done":
-            # Full agent transcript completed
+        elif event_type == "response.output_audio_transcript.done":
+            # Full agent transcript completed (GA event name)
             transcript = event.get("transcript", "")
             if transcript:
                 pipeline._transcript.append({"role": "agent", "content": transcript})

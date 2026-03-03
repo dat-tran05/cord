@@ -14,27 +14,51 @@ REALTIME_URL = "wss://api.openai.com/v1/realtime"
 
 @dataclass
 class SessionConfig:
+    """Configuration for an OpenAI Realtime GA session.
+
+    GA API reference: https://platform.openai.com/docs/api-reference/realtime-client-events
+    Key differences from beta:
+    - ``format`` is an object ``{"type": "audio/pcm", "rate": 24000}``, not a string.
+    - ``output_modalities`` accepts ``["audio"]`` OR ``["text"]``, not both.
+    - ``tools`` use a flat format: ``name``, ``description``, and ``parameters``
+      sit at the top level alongside ``"type": "function"`` (NOT nested in a
+      ``"function"`` wrapper like the Chat Completions REST API).
+    """
+
     instructions: str
     voice: str = "alloy"
     model: str = settings.openai_realtime_model
-    input_audio_format: str = "pcm16"
-    output_audio_format: str = "pcm16"
+    input_audio_format: dict = field(
+        default_factory=lambda: {"type": "audio/pcm", "rate": 24000}
+    )
+    output_audio_format: dict = field(
+        default_factory=lambda: {"type": "audio/pcm", "rate": 24000}
+    )
     tools: list[dict] = field(default_factory=list)
     turn_detection: dict = field(default_factory=lambda: {"type": "server_vad"})
-    input_audio_transcription: dict = field(default_factory=lambda: {"model": "gpt-4o-mini-transcribe"})
+    input_audio_transcription: dict = field(
+        default_factory=lambda: {"model": "gpt-4o-mini-transcribe"}
+    )
 
     def to_session_update_event(self) -> dict:
         return {
             "type": "session.update",
             "session": {
-                "modalities": ["text", "audio"],
+                "type": "realtime",
+                "output_modalities": ["audio"],
                 "instructions": self.instructions,
-                "voice": self.voice,
-                "input_audio_format": self.input_audio_format,
-                "output_audio_format": self.output_audio_format,
-                "input_audio_transcription": self.input_audio_transcription,
+                "audio": {
+                    "input": {
+                        "format": self.input_audio_format,
+                        "transcription": self.input_audio_transcription,
+                        "turn_detection": self.turn_detection,
+                    },
+                    "output": {
+                        "format": self.output_audio_format,
+                        "voice": self.voice,
+                    },
+                },
                 "tools": self.tools,
-                "turn_detection": self.turn_detection,
             },
         }
 

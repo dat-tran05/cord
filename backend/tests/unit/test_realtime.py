@@ -15,9 +15,18 @@ def test_session_config_to_event():
     config = SessionConfig(instructions="Sell a pen", tools=[{"type": "function", "name": "test"}])
     event = config.to_session_update_event()
     assert event["type"] == "session.update"
-    assert event["session"]["instructions"] == "Sell a pen"
-    assert event["session"]["voice"] == "alloy"
-    assert len(event["session"]["tools"]) == 1
+    session = event["session"]
+    assert session["type"] == "realtime"
+    assert session["instructions"] == "Sell a pen"
+    assert session["output_modalities"] == ["audio"]
+    # GA format: voice is nested under audio.output
+    assert session["audio"]["output"]["voice"] == "alloy"
+    # GA format: format is an object, not a string
+    assert session["audio"]["input"]["format"] == {"type": "audio/pcm", "rate": 24000}
+    assert session["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24000}
+    assert session["audio"]["input"]["transcription"]["model"] == "gpt-4o-mini-transcribe"
+    assert session["audio"]["input"]["turn_detection"]["type"] == "server_vad"
+    assert len(session["tools"]) == 1
 
 
 def test_create_audio_append_event():
