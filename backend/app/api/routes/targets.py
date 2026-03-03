@@ -1,35 +1,34 @@
+import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException
 
 from app.api.models import TargetCreate, TargetResponse
 from app import db
-from app.services.task_queue import TaskQueue
+from app.research.enricher import ProfileEnricher
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/targets", tags=["targets"])
+
+
+async def _run_enrichment(target_id: str, seed_data: dict) -> None:
+    """Run enrichment in background — updates DB when done."""
+    try:
+        await db.update_enrichment(target_id, "enriching")
+        enricher = ProfileEnricher()
+        enriched = await enricher.enrich(seed_data)
+        await db.update_enrichment(target_id, "enriched", enriched)
+    except Exception:
+        logger.exception(f"Enrichment failed for target {target_id}")
+        await db.update_enrichment(target_id, "failed")
 
 
 @router.post("", status_code=201, response_model=TargetResponse)
 async def create_target(body: TargetCreate):
     target_id = str(uuid.uuid4())[:8]
     target = await db.create_target(target_id, body.model_dump())
-
-    queue = TaskQueue()
-    await queue.enqueue("enrichment", {"target_id": target_id, "target_data": body.model_dump()})
-
-    return target
-
-
-@router.post("/{target_id}/enrich", response_model=TargetResponse)
-async def re_enrich_target(target_id: str):
-    """Retry enrichment for a target (e.g., after a failure)."""
-    target = await db.get_target(target_id)
-    if not target:
-        raise HTTPException(status_code=404, detail="Target not found")
-
-    queue = TaskQueue()
-    await queue.enqueue("enrichment", {"target_id": target_id, "target_data": target})
-
+    asyncio.create_task(_run_enrichment(target_id, body.model_dump()))
     return target
 
 

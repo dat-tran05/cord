@@ -8,13 +8,43 @@ and stage management it needs to run the full conversation autonomously.
 from __future__ import annotations
 
 
+_SKIP_KEYS = {"id", "enrichment_status", "enriched_profile", "created_at"}
+
+_ENRICHMENT_DISPLAY = {
+    "talking_points": "Talking points",
+    "rapport_hooks": "Rapport hooks",
+    "personalized_pitch_angles": "Best pitch angles",
+    "anticipated_objections": "Likely objections",
+}
+
+
 def _format_profile(profile: dict) -> str:
-    """Format a target profile dict into a readable bullet list."""
+    """Format target profile into labeled sections for the voice agent."""
+    # Basic info
     lines = []
     for key, value in profile.items():
-        if value:
+        if key in _SKIP_KEYS or not value:
+            continue
+        if isinstance(value, list):
+            lines.append(f"- {key}: {', '.join(str(v) for v in value)}")
+        elif not isinstance(value, dict):
             lines.append(f"- {key}: {value}")
-    return "\n".join(lines) if lines else "- No profile information available"
+
+    sections = "\n".join(lines) if lines else "- No profile information available"
+
+    # Enriched research intel
+    enriched = profile.get("enriched_profile")
+    if isinstance(enriched, dict):
+        intel_lines = []
+        for key, label in _ENRICHMENT_DISPLAY.items():
+            values = enriched.get(key, [])
+            if values:
+                items = ", ".join(str(v) for v in values) if isinstance(values, list) else str(values)
+                intel_lines.append(f"- {label}: {items}")
+        if intel_lines:
+            sections += "\n\n## Research & Talking Points\n" + "\n".join(intel_lines)
+
+    return sections
 
 
 def _format_objection_counters() -> str:

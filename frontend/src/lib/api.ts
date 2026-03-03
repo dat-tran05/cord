@@ -9,28 +9,6 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
   return res.json();
 }
 
-export type EnrichmentStatus = "pending" | "enriching" | "enriched" | "failed";
-
-export interface EnrichedProfile {
-  linkedin_summary: string;
-  twitter_bio: string;
-  public_posts: string[];
-  communication_style: string;
-  research_papers: string[];
-  lab_affiliations: string[];
-  projects: string[];
-  hackathons: string[];
-  blog_posts: string[];
-  reddit_activity: string;
-  hobbies: string[];
-  communities: string[];
-  talking_points: string[];
-  rapport_hooks: string[];
-  anticipated_objections: string[];
-  personalized_pitch_angles: string[];
-  raw_research_notes: string;
-}
-
 export interface Target {
   id: string;
   name: string;
@@ -40,8 +18,14 @@ export interface Target {
   interests: string[];
   clubs: string[];
   bio: string;
-  enrichment_status: EnrichmentStatus;
-  enriched_profile: EnrichedProfile | null;
+  enrichment_status: "pending" | "enriching" | "enriched" | "failed";
+  enriched_profile: {
+    talking_points?: string[];
+    rapport_hooks?: string[];
+    personalized_pitch_angles?: string[];
+    anticipated_objections?: string[];
+    [key: string]: unknown;
+  } | null;
 }
 
 export interface Call {
@@ -55,28 +39,19 @@ export interface Call {
 export interface CallDetail {
   call_id: string;
   is_active: boolean;
-  stage: string;
   transcript: { role: string; content: string }[];
 }
 
 export const api = {
   targets: {
     list: () => fetchApi<Target[]>("/api/targets"),
-    get: (id: string) => fetchApi<Target>(`/api/targets/${id}`),
     create: (data: Omit<Target, "id" | "enrichment_status" | "enriched_profile">) =>
       fetchApi<Target>("/api/targets", { method: "POST", body: JSON.stringify(data) }),
-    enrich: (id: string) =>
-      fetchApi<Target>(`/api/targets/${id}/enrich`, { method: "POST" }),
   },
   calls: {
     create: (data: { target_id: string; mode: string }) =>
       fetchApi<Call>("/api/calls", { method: "POST", body: JSON.stringify(data) }),
     get: (callId: string) => fetchApi<CallDetail>(`/api/calls/${callId}`),
-    sendText: (callId: string, message: string) =>
-      fetchApi<{ response: string; stage: string }>(`/api/calls/${callId}/text`, {
-        method: "POST",
-        body: JSON.stringify({ message }),
-      }),
     end: (callId: string) =>
       fetchApi<{ status: string; transcript: any[] }>(`/api/calls/${callId}/end`, { method: "POST" }),
     getAnalysis: (callId: string) =>
