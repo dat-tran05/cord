@@ -3,17 +3,17 @@ from unittest.mock import AsyncMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.api.routes import targets as targets_module, calls as calls_module
+from app.api.routes import calls as calls_module
+from app import db
 
 
 @pytest.fixture(autouse=True)
-def clear_state():
-    """Clear in-memory stores between tests to prevent state pollution."""
-    targets_module._targets.clear()
+async def setup_db():
+    """Use in-memory SQLite for each test."""
+    await db.init_db(":memory:")
     calls_module._pipelines.clear()
     yield
-    targets_module._targets.clear()
-    calls_module._pipelines.clear()
+    await db.close_db()
 
 
 @pytest.fixture

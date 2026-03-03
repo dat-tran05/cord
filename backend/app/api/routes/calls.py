@@ -6,16 +6,17 @@ from app.api.models import CallCreate, CallResponse, TextInput
 from app.api.routes.targets import get_target_data
 from app.analytics.analyzer import CallAnalyzer
 from app.voice.pipeline import VoicePipeline, CallConfig
+from app import db
 
 router = APIRouter(prefix="/api/calls", tags=["calls"])
 
-# Active pipelines
+# Active pipelines (in-memory — these hold live WebSocket objects)
 _pipelines: dict[str, VoicePipeline] = {}
 
 
 @router.post("", status_code=201, response_model=CallResponse)
 async def initiate_call(body: CallCreate):
-    target = get_target_data(body.target_id)
+    target = await get_target_data(body.target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
 
@@ -30,6 +31,7 @@ async def initiate_call(body: CallCreate):
     _pipelines[call_id] = pipeline
 
     await pipeline.start()
+    await db.create_call(call_id, body.target_id, target["name"], body.mode)
 
     return CallResponse(
         call_id=call_id,
@@ -61,6 +63,7 @@ async def end_call(call_id: str):
     if not pipeline:
         raise HTTPException(status_code=404, detail="Call not found")
     await pipeline.stop()
+    await db.end_call(call_id, pipeline.transcript)
     return {"status": "ended", "transcript": pipeline.transcript}
 
 
@@ -76,6 +79,7 @@ async def get_analysis(call_id: str):
 
     analyzer = CallAnalyzer()
     analysis = await analyzer.analyze(pipeline.transcript)
+    await db.save_analysis(call_id, analysis)
     return analysis
 
 
