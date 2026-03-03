@@ -1,10 +1,8 @@
-import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.agent.state_machine import ConversationStateMachine, ConversationStage
 from app.agent.supervisor import Supervisor
-from app.agent.prompts.system import SUPERVISOR_SYSTEM_PROMPT
 from app.services.redis_client import RedisService
 from app.voice.realtime import RealtimeSession, SessionConfig
 
@@ -47,7 +45,29 @@ class VoicePipeline:
         self._transcript: list[dict] = []
 
     def _build_realtime_instructions(self) -> str:
-        profile_summary = "\n".join(f"- {k}: {v}" for k, v in self.config.target_profile.items() if v)
+        profile = self.config.target_profile
+        lines = []
+        skip_keys = {"id", "enrichment_status", "enriched_profile", "created_at"}
+        for k, v in profile.items():
+            if k in skip_keys or not v:
+                continue
+            if isinstance(v, list):
+                lines.append(f"- {k}: {', '.join(str(x) for x in v)}")
+            else:
+                lines.append(f"- {k}: {v}")
+
+        # Flatten enriched profile into the summary
+        enriched = profile.get("enriched_profile")
+        if isinstance(enriched, dict):
+            for ek, ev in enriched.items():
+                if ek == "raw_research_notes" or not ev:
+                    continue
+                if isinstance(ev, list):
+                    lines.append(f"- {ek}: {', '.join(str(x) for x in ev)}")
+                else:
+                    lines.append(f"- {ek}: {ev}")
+
+        profile_summary = "\n".join(lines)
         return REALTIME_INSTRUCTIONS_TEMPLATE.format(
             name=self.config.target_name,
             profile_summary=profile_summary,

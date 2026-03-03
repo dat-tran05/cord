@@ -35,6 +35,8 @@ async def init_db(db_path: str | Path | None = None) -> None:
             interests TEXT DEFAULT '[]',
             clubs TEXT DEFAULT '[]',
             bio TEXT DEFAULT '',
+            enrichment_status TEXT DEFAULT 'pending',
+            enriched_profile TEXT DEFAULT NULL,
             created_at TEXT
         );
         CREATE TABLE IF NOT EXISTS calls (
@@ -51,6 +53,23 @@ async def init_db(db_path: str | Path | None = None) -> None:
         """
     )
     await _db.commit()
+    await _ensure_enrichment_columns()
+
+
+async def _ensure_enrichment_columns() -> None:
+    """Add enrichment columns to existing targets tables (idempotent)."""
+    db = await get_db()
+    for col, default in [
+        ("enrichment_status", "'pending'"),
+        ("enriched_profile", "NULL"),
+    ]:
+        try:
+            await db.execute(
+                f"ALTER TABLE targets ADD COLUMN {col} TEXT DEFAULT {default}"
+            )
+        except Exception:
+            pass  # Column already exists
+    await db.commit()
 
 
 async def close_db() -> None:
@@ -67,8 +86,8 @@ async def create_target(target_id: str, data: dict) -> dict:
     db = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        """INSERT INTO targets (id, name, school, major, year, interests, clubs, bio, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO targets (id, name, school, major, year, interests, clubs, bio, enrichment_status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
         (
             target_id,
             data["name"],
@@ -82,7 +101,18 @@ async def create_target(target_id: str, data: dict) -> dict:
         ),
     )
     await db.commit()
-    return {"id": target_id, **data, "created_at": now}
+    return {"id": target_id, **data, "enrichment_status": "pending", "enriched_profile": None, "created_at": now}
+
+
+async def update_enrichment(
+    target_id: str, status: str, enriched_profile: dict | None = None
+) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE targets SET enrichment_status = ?, enriched_profile = ? WHERE id = ?",
+        (status, json.dumps(enriched_profile) if enriched_profile else None, target_id),
+    )
+    await db.commit()
 
 
 async def list_targets() -> list[dict]:
@@ -100,6 +130,7 @@ async def get_target(target_id: str) -> dict | None:
 
 
 def _row_to_target(row: aiosqlite.Row) -> dict:
+    keys = row.keys()
     return {
         "id": row["id"],
         "name": row["name"],
@@ -109,6 +140,8 @@ def _row_to_target(row: aiosqlite.Row) -> dict:
         "interests": json.loads(row["interests"]),
         "clubs": json.loads(row["clubs"]),
         "bio": row["bio"],
+        "enrichment_status": row["enrichment_status"] if "enrichment_status" in keys else "pending",
+        "enriched_profile": json.loads(row["enriched_profile"]) if "enriched_profile" in keys and row["enriched_profile"] else None,
     }
 
 

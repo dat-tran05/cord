@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
-    "openai>=1.50.0",
+    "openai>=1.66.0",
     "redis[hiredis]>=5.0.0",
     "twilio>=9.0.0",
     "deepgram-sdk>=3.5.0",

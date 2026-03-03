@@ -9,6 +9,28 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
   return res.json();
 }
 
+export type EnrichmentStatus = "pending" | "enriching" | "enriched" | "failed";
+
+export interface EnrichedProfile {
+  linkedin_summary: string;
+  twitter_bio: string;
+  public_posts: string[];
+  communication_style: string;
+  research_papers: string[];
+  lab_affiliations: string[];
+  projects: string[];
+  hackathons: string[];
+  blog_posts: string[];
+  reddit_activity: string;
+  hobbies: string[];
+  communities: string[];
+  talking_points: string[];
+  rapport_hooks: string[];
+  anticipated_objections: string[];
+  personalized_pitch_angles: string[];
+  raw_research_notes: string;
+}
+
 export interface Target {
   id: string;
   name: string;
@@ -18,6 +40,8 @@ export interface Target {
   interests: string[];
   clubs: string[];
   bio: string;
+  enrichment_status: EnrichmentStatus;
+  enriched_profile: EnrichedProfile | null;
 }
 
 export interface Call {
@@ -38,8 +62,11 @@ export interface CallDetail {
 export const api = {
   targets: {
     list: () => fetchApi<Target[]>("/api/targets"),
-    create: (data: Omit<Target, "id">) =>
+    get: (id: string) => fetchApi<Target>(`/api/targets/${id}`),
+    create: (data: Omit<Target, "id" | "enrichment_status" | "enriched_profile">) =>
       fetchApi<Target>("/api/targets", { method: "POST", body: JSON.stringify(data) }),
+    enrich: (id: string) =>
+      fetchApi<Target>(`/api/targets/${id}/enrich`, { method: "POST" }),
   },
   calls: {
     create: (data: { target_id: string; mode: string }) =>
