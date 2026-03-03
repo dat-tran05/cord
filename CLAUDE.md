@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-CORD is a voice persuasion agent that calls MIT students and sells them a pen. It uses a **dual-model architecture**: OpenAI Realtime API (gpt-realtime-mini) handles natural voice conversation while a GPT-5.2 supervisor makes strategic decisions via tool calls. The frontend is a Next.js dashboard for monitoring calls and viewing post-call AI analysis.
+CORD is a voice persuasion agent that calls MIT students and sells them a pen. It uses a **single-model architecture**: the OpenAI Realtime API (gpt-realtime-mini) handles the entire conversation autonomously -- voice synthesis, strategy, objection handling, and stage management -- guided by a comprehensive system prompt. The frontend is a Next.js dashboard for monitoring calls and viewing post-call AI analysis.
 
 ## Commands
 
@@ -12,9 +12,9 @@ CORD is a voice persuasion agent that calls MIT students and sells them a pen. I
 ```bash
 pip install -e ".[dev]"                          # Install with dev deps
 uvicorn app.main:app --reload --port 8000        # Dev server
-pytest tests/ -v                                 # All tests (32 total)
-pytest tests/unit/test_state_machine.py -v       # Single file
-pytest tests/unit/test_supervisor.py::test_lookup_profile -v  # Single test
+pytest tests/ -v                                 # All tests (40 total)
+pytest tests/unit/test_pipeline.py -v            # Single file
+pytest tests/unit/test_prompt.py::TestBuildRealtimePrompt::test_includes_target_name -v  # Single test
 ruff check app/ tests/                           # Lint
 ruff format app/ tests/                          # Format
 ```
@@ -36,42 +36,37 @@ cd frontend && npm run dev
 
 ## Architecture
 
-### Dual-Model Voice Pipeline
+### Single-Model Voice Pipeline
 ```
 Browser audio (PCM16 24kHz via WebSocket)
     ↓
 ws_voice.py — bidirectional bridge with two async loops (inbound/outbound)
     ↓
-OpenAI Realtime API (gpt-realtime-mini) — natural conversation + voice synthesis
-    ↓ delegates via "delegate_to_supervisor" tool call
-Supervisor (GPT-5.2) — strategy, stage transitions, objection counters
+OpenAI Realtime API (gpt-realtime-mini) — full conversation (voice + strategy)
     ↓
-Redis — session state (cord:session:*) + pub/sub events (cord:events)
+Redis — pub/sub events (cord:events)
     ↓
 Next.js Dashboard — live event stream via /ws/events
 ```
 
-### Conversation State Machine (7 stages)
-`PRE_CALL → INTRO → PITCH → OBJECTION ↔ PITCH → CLOSE → LOGISTICS → WRAP_UP`
+### Conversation Flow (6 stages, managed by the prompt)
+`INTRO → PITCH → OBJECTION HANDLING ↔ PITCH → CLOSE → LOGISTICS → WRAP-UP`
 
-OBJECTION can loop back to PITCH. Transitions are validated by `state_machine.py`.
+The Realtime model manages stage transitions autonomously via a comprehensive system prompt that includes all strategy, objection counters, and conversation flow guidance. No external state machine or supervisor model.
 
 ### OpenAI Realtime API (GA, not Beta)
 The API uses the **GA format** which differs from beta docs you may find online:
 - `format` is an **object** `{"type": "audio/pcm", "rate": 24000}`, not a string
 - `output_modalities` must be `["audio"]` OR `["text"]`, cannot request both
-- Tools use **flat format**: `{"type": "function", "name": "...", "parameters": {...}}` (NOT the nested `"function": {...}` wrapper that Chat Completions uses)
+- No tools are registered -- the model runs autonomously via a detailed system prompt
 - Event names: `response.output_audio.delta` (not `response.audio.delta`), `response.output_audio_transcript.delta/done`
 - Session config requires `"type": "realtime"` at session level
 
 ### Key Backend Files
+- `app/voice/prompt.py` — Single comprehensive system prompt builder (target profile, objection counters, conversation flow)
 - `app/voice/realtime.py` — SessionConfig + RealtimeSession WebSocket client
-- `app/voice/pipeline.py` — VoicePipeline orchestrator, builds realtime instructions
+- `app/voice/pipeline.py` — VoicePipeline orchestrator, builds prompt and manages session lifecycle
 - `app/api/routes/ws_voice.py` — Browser↔OpenAI bridge (inbound + outbound async loops)
-- `app/agent/supervisor.py` — GPT-5.2 with tool-calling loop
-- `app/agent/state_machine.py` — ConversationStage enum + FSM with validation
-- `app/agent/tools.py` — 4 supervisor tools: lookup_profile, transition_stage, get_objection_counters, log_outcome
-- `app/agent/prompts/system.py` — SUPERVISOR_SYSTEM_PROMPT template + OBJECTION_COUNTERS dict
 
 ### Key Frontend Files
 - `src/hooks/useVoiceChat.ts` — WebSocket to `/ws/voice/{callId}`, mic capture (ScriptProcessorNode), audio playback (AudioContext), Float32↔PCM16 conversion
@@ -91,9 +86,7 @@ Frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`).
 
 ## Testing Notes
 
-All 32 unit tests use mocks (no real API calls). Tests in `backend/tests/unit/` cover: state machine transitions, supervisor tool handling, pipeline config, realtime session formatting, Redis client, API routes, analyzer, enricher, tool schemas.
-
-The `test_api_calls.py` uses an autouse fixture to clear module-level `_targets` and `_pipelines` dicts between tests to prevent state pollution.
+All 40 unit tests use mocks (no real API calls). Tests in `backend/tests/unit/` cover: prompt builder, pipeline config/lifecycle, realtime session formatting, Redis client, API routes, analyzer, enricher.
 
 ## Remaining Work
 

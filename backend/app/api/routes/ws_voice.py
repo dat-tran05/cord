@@ -4,7 +4,6 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.agent.state_machine import ConversationStage
 from app.services.redis_client import RedisService
 from app.voice.pipeline import CallConfig, VoicePipeline
 from app.voice.realtime import RealtimeSession, SessionConfig
@@ -27,7 +26,6 @@ async def voice_websocket(ws: WebSocket, call_id: str):
     Backend sends JSON messages:
       - {"type": "audio", "audio": "<base64 PCM16 24kHz>"}
       - {"type": "transcript", "role": "agent"|"user", "text": "..."}
-      - {"type": "stage", "stage": "intro"|"pitch"|...}
       - {"type": "error", "message": "..."}
     """
     await ws.accept()
@@ -48,7 +46,7 @@ async def voice_websocket(ws: WebSocket, call_id: str):
         target_profile = start_msg.get("target_profile", {})
         target_name = target_profile.get("name", "Unknown")
 
-        # Create pipeline and supervisor
+        # Create pipeline
         config = CallConfig(
             call_id=call_id,
             target_name=target_name,
@@ -57,34 +55,11 @@ async def voice_websocket(ws: WebSocket, call_id: str):
         )
         pipeline = VoicePipeline(config, redis=redis)
         pipeline.is_active = True
-        pipeline.state_machine.transition(ConversationStage.INTRO)
 
-        # Build realtime session with tools
-        # Realtime API uses a flat tool format: name/description/parameters
-        # sit at the top level alongside "type", NOT nested in a "function" key.
+        # Build realtime session — no tools, the single prompt handles everything
         session_config = SessionConfig(
-            instructions=pipeline._build_realtime_instructions(),
-            tools=[
-                {
-                    "type": "function",
-                    "name": "delegate_to_supervisor",
-                    "description": "Delegate a strategic decision to the supervisor model for better reasoning.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "question": {
-                                "type": "string",
-                                "description": "What you need the supervisor to decide",
-                            },
-                            "context": {
-                                "type": "string",
-                                "description": "Relevant conversation context",
-                            },
-                        },
-                        "required": ["question"],
-                    },
-                },
-            ],
+            instructions=pipeline.build_prompt(),
+            tools=[],
         )
         realtime = RealtimeSession(config=session_config)
         await realtime.connect()
@@ -95,9 +70,6 @@ async def voice_websocket(ws: WebSocket, call_id: str):
             "target": target_name,
             "mode": "browser",
         })
-
-        # Send initial stage to browser
-        await ws.send_json({"type": "stage", "stage": pipeline.state_machine.current_stage.value})
 
         # Run inbound and outbound loops concurrently
         inbound_task = asyncio.create_task(
@@ -145,7 +117,6 @@ async def voice_websocket(ws: WebSocket, call_id: str):
             pipeline.is_active = False
             await redis.publish_event("call.ended", {
                 "call_id": call_id,
-                "stage": pipeline.state_machine.current_stage.value if pipeline else "unknown",
                 "transcript_length": len(pipeline._transcript) if pipeline else 0,
             })
 
@@ -173,7 +144,6 @@ async def _inbound_loop(
                 pipeline._transcript.append({"role": "student", "content": text})
                 await redis.publish_event("transcript.update", {
                     "call_id": pipeline.config.call_id,
-                    "stage": pipeline.state_machine.current_stage.value,
                     "message": {"role": "user", "content": text},
                 })
                 await ws.send_json({"type": "transcript", "role": "user", "text": text})
@@ -215,7 +185,6 @@ async def _outbound_loop(
                 await ws.send_json({"type": "transcript", "role": "agent", "text": transcript})
                 await redis.publish_event("transcript.update", {
                     "call_id": pipeline.config.call_id,
-                    "stage": pipeline.state_machine.current_stage.value,
                     "message": {"role": "agent", "content": transcript},
                 })
 
@@ -231,13 +200,8 @@ async def _outbound_loop(
                 await ws.send_json({"type": "transcript", "role": "user", "text": user_text})
                 await redis.publish_event("transcript.update", {
                     "call_id": pipeline.config.call_id,
-                    "stage": pipeline.state_machine.current_stage.value,
                     "message": {"role": "user", "content": user_text},
                 })
-
-        elif event_type == "response.function_call_arguments.done":
-            # Handle tool call via Supervisor
-            await _handle_tool_call(event, realtime, pipeline, ws, redis)
 
         elif event_type == "response.done":
             # Response complete — nothing special needed
@@ -250,49 +214,3 @@ async def _outbound_loop(
 
         elif event_type == "session.created" or event_type == "session.updated":
             logger.info(f"Realtime session event: {event_type}")
-
-
-async def _handle_tool_call(
-    event: dict,
-    realtime: RealtimeSession,
-    pipeline: VoicePipeline,
-    ws: WebSocket,
-    redis: RedisService,
-) -> None:
-    """Handle a tool call from OpenAI Realtime (delegate_to_supervisor)."""
-    fn_name = event.get("name", "")
-    call_id = event.get("call_id", "")
-    raw_args = event.get("arguments", "{}")
-
-    try:
-        args = json.loads(raw_args)
-    except json.JSONDecodeError:
-        args = {}
-
-    if fn_name == "delegate_to_supervisor":
-        question = args.get("question", "")
-        context = args.get("context", "")
-        prompt = f"Question from the voice agent: {question}"
-        if context:
-            prompt += f"\nContext: {context}"
-
-        # Capture stage before supervisor call to detect transitions
-        stage_before = pipeline.state_machine.current_stage.value
-
-        # Get supervisor's response
-        supervisor_response = await pipeline.supervisor.get_response(prompt)
-
-        # Check if the supervisor triggered a stage transition
-        stage_after = pipeline.state_machine.current_stage.value
-        if stage_before != stage_after:
-            await ws.send_json({"type": "stage", "stage": stage_after})
-            await redis.publish_event("stage.changed", {
-                "call_id": pipeline.config.call_id,
-                "stage": stage_after,
-            })
-
-        # Send tool result back to OpenAI Realtime
-        await realtime.send_tool_result(call_id, supervisor_response)
-    else:
-        # Unknown tool — send error result
-        await realtime.send_tool_result(call_id, f"Unknown tool: {fn_name}")
