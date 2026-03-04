@@ -106,7 +106,7 @@ class CallRunner:
         response = await self._client.chat.completions.create(
             model=self._model,
             messages=messages,
-            max_tokens=200,
+            max_completion_tokens=200,
             temperature=0.9,
         )
         return response.choices[0].message.content.strip()
