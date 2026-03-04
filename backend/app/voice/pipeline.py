@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from app.services.redis_client import RedisService
-from app.voice.prompt import build_realtime_prompt
+from app.voice.prompt import build_realtime_prompt, pick_voice_for_target
 from app.voice.realtime import RealtimeSession, SessionConfig
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ class VoicePipeline:
 
         session_config = SessionConfig(
             instructions=self.build_prompt(),
+            voice=pick_voice_for_target(self.config.target_name),
         )
         self._realtime = RealtimeSession(config=session_config)
         await self._realtime.connect()

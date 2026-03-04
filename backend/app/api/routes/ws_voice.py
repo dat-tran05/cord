@@ -7,6 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app import db
 from app.services.redis_client import RedisService
 from app.voice.pipeline import CallConfig, VoicePipeline
+from app.voice.prompt import pick_voice_for_target
 from app.voice.realtime import RealtimeSession, SessionConfig
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ async def voice_websocket(ws: WebSocket, call_id: str):
         # Build realtime session — no tools, the single prompt handles everything
         session_config = SessionConfig(
             instructions=pipeline.build_prompt(),
+            voice=pick_voice_for_target(target_name),
             tools=[],
         )
         realtime = RealtimeSession(config=session_config)

@@ -1,7 +1,7 @@
 """Tests for the single-prompt builder module."""
 
 
-from app.voice.prompt import build_realtime_prompt, _format_profile, _format_objection_counters
+from app.voice.prompt import build_realtime_prompt, pick_voice_for_target, _format_profile, _format_objection_counters
 
 
 class TestFormatProfile:
@@ -96,7 +96,7 @@ class TestBuildRealtimePrompt:
         prompt = build_realtime_prompt("Alex", {"name": "Alex"})
         assert "INTRO" in prompt
         assert "PITCH" in prompt
-        assert "OBJECTION" in prompt
+        assert "RESISTANCE" in prompt or "PUSH THROUGH" in prompt
         assert "CLOSE" in prompt
         assert "LOGISTICS" in prompt
         assert "WRAP_UP" in prompt or "WRAP-UP" in prompt or "Wrap-Up" in prompt or "wrap up" in prompt.lower()
@@ -118,9 +118,35 @@ class TestBuildRealtimePrompt:
 
     def test_prompt_has_personality_instructions(self):
         prompt = build_realtime_prompt("Alex", {"name": "Alex"})
-        assert "Confident but not pushy" in prompt
+        assert "persistent" in prompt.lower()
         assert "concise" in prompt.lower()
 
-    def test_prompt_instructs_respect_for_hard_no(self):
+    def test_prompt_instructs_back_off_conditions(self):
         prompt = build_realtime_prompt("Alex", {"name": "Alex"})
-        assert "hard no" in prompt.lower() or "firmly say no" in prompt.lower()
+        assert "frustrated" in prompt.lower() or "back off" in prompt.lower()
+
+    def test_prompt_includes_college_context(self):
+        prompt = build_realtime_prompt("Alex", {"name": "Alex"})
+        assert "exam" in prompt.lower()
+        assert "lecture" in prompt.lower() or "notes" in prompt.lower()
+
+
+class TestPickVoiceForTarget:
+    def test_male_name_returns_male_voice(self):
+        assert pick_voice_for_target("David") == "ash"
+        assert pick_voice_for_target("James Smith") == "ash"
+
+    def test_female_name_returns_female_voice(self):
+        assert pick_voice_for_target("Sarah") == "shimmer"
+        assert pick_voice_for_target("Emily Johnson") == "shimmer"
+
+    def test_unknown_name_returns_default(self):
+        assert pick_voice_for_target("Xyzzy") == "alloy"
+
+    def test_empty_name_returns_default(self):
+        assert pick_voice_for_target("") == "alloy"
+        assert pick_voice_for_target("   ") == "alloy"
+
+    def test_uses_first_name_only(self):
+        # "Jordan" is androgynous, but "Michael Jordan" should use "Michael"
+        assert pick_voice_for_target("Michael Jordan") == "ash"

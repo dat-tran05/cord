@@ -36,6 +36,33 @@ cd frontend && npm run dev
 
 ## Architecture
 
+### Project Structure
+```
+cord/
+├── CLAUDE.md
+├── docs/                          # Design docs, TODO, plans
+├── backend/
+│   ├── app/
+│   │   ├── main.py                # FastAPI + lifespan (DB init, worker start, crash recovery)
+│   │   ├── config.py              # pydantic-settings env config
+│   │   ├── db.py                  # aiosqlite — targets + calls tables
+│   │   ├── voice/                 # Voice pipeline
+│   │   │   ├── prompt.py          # build_realtime_prompt()
+│   │   │   ├── pipeline.py        # VoicePipeline + CallConfig
+│   │   │   └── realtime.py        # RealtimeSession (OpenAI WS client)
+│   │   ├── api/routes/            # REST + WebSocket handlers
+│   │   │   ├── calls.py, targets.py, ws.py, ws_voice.py
+│   │   ├── research/enricher.py   # Two-phase target enrichment (web search → tactical analysis)
+│   │   ├── analytics/             # Post-call analyzer + Deepgram transcription
+│   │   └── services/              # Redis client, task queue, job handlers
+│   └── tests/unit/                # 8 files, 40 tests
+└── frontend/src/
+    ├── app/                        # Pages: dashboard(/), targets, calls/[id], analysis
+    ├── components/                 # VoiceChat, CallCard, NewCallDialog, Navbar, ui/
+    ├── hooks/                      # useVoiceChat (audio bridge), useWebSocket (event stream)
+    └── lib/                        # api.ts (typed REST client), utils.ts
+```
+
 ### Single-Model Voice Pipeline
 ```
 Browser audio (PCM16 24kHz via WebSocket)
@@ -63,10 +90,15 @@ The API uses the **GA format** which differs from beta docs you may find online:
 - Session config requires `"type": "realtime"` at session level
 
 ### Key Backend Files
-- `app/voice/prompt.py` — Single comprehensive system prompt builder (target profile, objection counters, conversation flow)
-- `app/voice/realtime.py` — SessionConfig + RealtimeSession WebSocket client
+- `app/voice/prompt.py` — System prompt builder (target profile, enriched data, objection counters, conversation flow)
+- `app/voice/realtime.py` — SessionConfig + RealtimeSession WebSocket client (GA format)
 - `app/voice/pipeline.py` — VoicePipeline orchestrator, builds prompt and manages session lifecycle
 - `app/api/routes/ws_voice.py` — Browser↔OpenAI bridge (inbound + outbound async loops)
+- `app/db.py` — aiosqlite layer: `targets` table (with enrichment_status, enriched_profile JSON) + `calls` table (with transcript JSON, analysis JSON)
+- `app/research/enricher.py` — Two-phase enrichment: web research (Responses API + web_search_preview) → tactical analysis (Chat Completions + structured JSON schema via gpt-5.2)
+- `app/services/task_queue.py` — Redis-backed async job queue with crash recovery (pending→processing→completed, re-enqueues on startup)
+- `app/services/handlers.py` — Registers `"enrichment"` job type; auto-enqueued on target creation
+- `app/analytics/analyzer.py` — Post-call GPT analysis (effectiveness score, objection handling, sentiment arc, improvement suggestions)
 
 ### Key Frontend Files
 - `src/hooks/useVoiceChat.ts` — WebSocket to `/ws/voice/{callId}`, mic capture (ScriptProcessorNode), audio playback (AudioContext), Float32↔PCM16 conversion
@@ -75,18 +107,32 @@ The API uses the **GA format** which differs from beta docs you may find online:
 - UI uses shadcn/ui (new-york style) + Tailwind v4 + lucide-react icons, dark theme via `class="dark"` on html
 
 ### API Endpoints
-- REST: `/api/targets` (CRUD), `/api/calls` (create/get/text/end/analysis)
-- WebSocket: `/ws/voice/{call_id}` (audio bridge), `/ws/events` (dashboard event stream)
+- `POST/GET /api/targets`, `DELETE /api/targets/{id}` — Target CRUD (create auto-enqueues enrichment)
+- `POST /api/calls` — Create call (target_id, mode: "text"|"browser"|"twilio")
+- `POST /api/calls/{id}/end` — End call, save transcript
+- `GET /api/calls/{id}/analysis` — Run/fetch GPT analysis on transcript
+- `GET /api/calls/{id}` — Get active call state
+- `WS /ws/voice/{call_id}` — Browser↔OpenAI audio bridge (JSON messages: start/audio/text/stop)
+- `WS /ws/events` — Dashboard live event stream (Redis pub/sub fan-out)
+- `GET /health` — Health check
 
 ## Environment
 
-Backend requires `backend/.env` with: `OPENAI_API_KEY`, `REDIS_URL` (defaults to localhost:6379). Optional: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `DEEPGRAM_API_KEY`.
+Backend requires `backend/.env` with: `OPENAI_API_KEY`, `REDIS_URL` (defaults to `redis://localhost:6379/0`). Config also includes: `OPENAI_REALTIME_MODEL` (default `gpt-realtime-mini`), `OPENAI_SUPERVISOR_MODEL` (default `gpt-5.2`, used for enrichment + analysis), `FRONTEND_URL` (default `http://localhost:3000`, used for CORS). Optional: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `DEEPGRAM_API_KEY`.
 
-Frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`).
+Frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`) and `NEXT_PUBLIC_WS_URL` (defaults to `ws://localhost:8000/ws/events`).
 
 ## Testing Notes
 
-All 40 unit tests use mocks (no real API calls). Tests in `backend/tests/unit/` cover: prompt builder, pipeline config/lifecycle, realtime session formatting, Redis client, API routes, analyzer, enricher.
+All 40 unit tests use mocks (no real API calls). Tests in `backend/tests/unit/` cover: prompt builder, pipeline config/lifecycle, realtime session formatting, Redis client, API routes, analyzer, enricher, enrichment flow.
+- Redis tests use `fakeredis.FakeAsyncRedis`
+- DB tests use `aiosqlite` with `":memory:"`
+- API integration tests use `httpx.AsyncClient` with `ASGITransport`
+- Enrichment flow tests verify status transitions: `pending → enriching → enriched/failed`
+
+## Design History
+
+Originally designed as dual-model (Realtime + GPT-5.2 supervisor with FSM). Pivoted to single-prompt architecture because the rigid state machine conflicted with natural conversation flow and the supervisor added latency. See `docs/plans/` for full design history.
 
 ## Remaining Work
 
