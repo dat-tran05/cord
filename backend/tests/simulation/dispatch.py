@@ -43,7 +43,9 @@ async def main() -> None:
     group.add_argument("--presets", action="store_true", help="Run 5 preset personas")
     group.add_argument("--random", type=int, metavar="N", help="Run N random personas")
     parser.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
-    parser.add_argument("--timeout", type=int, default=600, help="Max wait in seconds (default: 600)")
+    parser.add_argument(
+        "--timeout", type=int, default=600, help="Max wait in seconds (default: 600)"
+    )
     parser.add_argument("--redis-url", default=settings.redis_url)
     args = parser.parse_args()
 
@@ -120,8 +122,10 @@ async def main() -> None:
 
     stale = len(statuses.get("processing", []))
     if stale:
-        print(f"\nWARNING: {stale} jobs stuck in processing. "
-              "Run a worker with --recover to re-enqueue them.")
+        print(
+            f"\nWARNING: {stale} jobs stuck in processing. "
+            "Run a worker with --recover to re-enqueue them."
+        )
 
     # --- Collect phase ---
     results = await get_job_results(redis, job_ids)
