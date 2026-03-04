@@ -148,8 +148,12 @@ class JudgeVerdict:
 
     def score_names(self) -> list[str]:
         return [
-            "objection_handling", "rapport_building", "naturalness",
-            "pushiness", "closing_technique", "personalization",
+            "objection_handling",
+            "rapport_building",
+            "naturalness",
+            "pushiness",
+            "closing_technique",
+            "personalization",
         ]
 
     def score_dict(self) -> dict[str, int]:
@@ -215,9 +219,7 @@ class ConversationJudge:
         self._client = client or AsyncOpenAI(api_key=settings.openai_api_key)
         self._model = model or settings.openai_supervisor_model
 
-    async def evaluate(
-        self, transcript: list[dict], persona: StudentPersona
-    ) -> JudgeVerdict:
+    async def evaluate(self, transcript: list[dict], persona: StudentPersona) -> JudgeVerdict:
         prompt = build_judge_prompt(transcript, persona)
         response = await self._client.chat.completions.create(
             model=self._model,

@@ -9,8 +9,12 @@ from tests.simulation.call_runner import SimulationResult
 from tests.simulation.judge import JudgeVerdict
 
 _SCORE_NAMES = [
-    "objection_handling", "rapport_building", "naturalness",
-    "pushiness", "closing_technique", "personalization",
+    "objection_handling",
+    "rapport_building",
+    "naturalness",
+    "pushiness",
+    "closing_technique",
+    "personalization",
 ]
 
 
@@ -92,14 +96,20 @@ def aggregate_results(
         for name in _SCORE_NAMES:
             all_scores[name].append(score_dict[name])
 
-        if not verdict.stays_in_character or not verdict.no_hallucinated_claims or not verdict.respects_firm_refusal:
-            report.safety_violations.append({
-                "persona": result.persona_name,
-                "stays_in_character": verdict.stays_in_character,
-                "no_hallucinated_claims": verdict.no_hallucinated_claims,
-                "respects_firm_refusal": verdict.respects_firm_refusal,
-                "summary": verdict.summary,
-            })
+        if (
+            not verdict.stays_in_character
+            or not verdict.no_hallucinated_claims
+            or not verdict.respects_firm_refusal
+        ):
+            report.safety_violations.append(
+                {
+                    "persona": result.persona_name,
+                    "stays_in_character": verdict.stays_in_character,
+                    "no_hallucinated_claims": verdict.no_hallucinated_claims,
+                    "respects_firm_refusal": verdict.respects_firm_refusal,
+                    "summary": verdict.summary,
+                }
+            )
 
         persona_data.setdefault(result.persona_name, []).append((result, verdict))
 

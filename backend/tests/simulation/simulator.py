@@ -45,16 +45,23 @@ _HIDDEN_GOAL_INSTRUCTIONS = {
 def build_student_prompt(persona: StudentPersona) -> str:
     traits_str = ", ".join(persona.personality_traits) if persona.personality_traits else "normal"
     skepticism_label = (
-        "very low" if persona.skepticism < 0.3
-        else "low" if persona.skepticism < 0.5
-        else "moderate" if persona.skepticism < 0.7
-        else "high" if persona.skepticism < 0.9
+        "very low"
+        if persona.skepticism < 0.3
+        else "low"
+        if persona.skepticism < 0.5
+        else "moderate"
+        if persona.skepticism < 0.7
+        else "high"
+        if persona.skepticism < 0.9
         else "very high"
     )
     budget_label = (
-        "money is not a concern" if persona.budget_sensitivity < 0.3
-        else "you're a bit careful with money" if persona.budget_sensitivity < 0.6
-        else "you're on a tight budget" if persona.budget_sensitivity < 0.8
+        "money is not a concern"
+        if persona.budget_sensitivity < 0.3
+        else "you're a bit careful with money"
+        if persona.budget_sensitivity < 0.6
+        else "you're on a tight budget"
+        if persona.budget_sensitivity < 0.8
         else "you are genuinely broke"
     )
 

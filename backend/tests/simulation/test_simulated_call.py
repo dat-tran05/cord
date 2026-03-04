@@ -53,10 +53,10 @@ async def test_preset_persona(runner, judge, persona_name):
     persona = get_preset(persona_name)
     result, verdict = await _run_and_judge(runner, judge, SAMPLE_TARGET_ENRICHED, persona)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Persona: {persona_name} (goal: {persona.hidden_goal})")
     print(f"Outcome: {result.outcome} in {result.turns} turns ({result.duration_seconds}s)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for entry in result.transcript:
         role = "AGENT" if entry["role"] == "agent" else "STUDENT"
         print(f"  [{role}] {entry['content']}")
@@ -76,10 +76,9 @@ async def test_random_personas(runner, judge):
     all_pairs: list[tuple[SimulationResult, JudgeVerdict]] = []
     for i in range(0, len(personas), batch_size):
         batch = personas[i : i + batch_size]
-        results = await asyncio.gather(*[
-            _run_and_judge(runner, judge, SAMPLE_TARGET_ENRICHED, p)
-            for p in batch
-        ])
+        results = await asyncio.gather(
+            *[_run_and_judge(runner, judge, SAMPLE_TARGET_ENRICHED, p) for p in batch]
+        )
         all_pairs.extend(results)
 
     report = aggregate_results(all_pairs)

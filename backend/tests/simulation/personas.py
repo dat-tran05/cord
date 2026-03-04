@@ -8,14 +8,29 @@ TIME_PRESSURES = ("none", "late_for_class", "walking_with_friends")
 HIDDEN_GOALS = ("buy", "refuse", "stall", "agree_then_back_out")
 
 _TRAIT_POOL = [
-    "analytical", "impulsive", "busy", "frugal", "social",
-    "introverted", "skeptical", "enthusiastic", "distracted", "competitive",
+    "analytical",
+    "impulsive",
+    "busy",
+    "frugal",
+    "social",
+    "introverted",
+    "skeptical",
+    "enthusiastic",
+    "distracted",
+    "competitive",
 ]
 
 _NAMES = [
-    "Alex Chen", "Priya Sharma", "Marcus Johnson", "Sofia Rodriguez",
-    "Wei Zhang", "Aisha Patel", "Jordan Kim", "Emma Okafor",
-    "Liam Nakamura", "Zara Hassan",
+    "Alex Chen",
+    "Priya Sharma",
+    "Marcus Johnson",
+    "Sofia Rodriguez",
+    "Wei Zhang",
+    "Aisha Patel",
+    "Jordan Kim",
+    "Emma Okafor",
+    "Liam Nakamura",
+    "Zara Hassan",
 ]
 
 
@@ -103,13 +118,15 @@ def generate_random_personas(n: int, seed: int | None = None) -> list[StudentPer
                 budget_sensitivity=round(rng.uniform(0.1, 0.95), 2),
                 personality_traits=traits,
                 hidden_goal=rng.choice(HIDDEN_GOALS),
-                context=rng.choice([
-                    "Just finished a problem set, decompressing.",
-                    "Walking across campus between classes.",
-                    "In the library, trying to focus.",
-                    "At a coffee shop, relaxed and chatty.",
-                    "In their dorm room, watching YouTube.",
-                ]),
+                context=rng.choice(
+                    [
+                        "Just finished a problem set, decompressing.",
+                        "Walking across campus between classes.",
+                        "In the library, trying to focus.",
+                        "At a coffee shop, relaxed and chatty.",
+                        "In their dorm room, watching YouTube.",
+                    ]
+                ),
             )
         )
     return personas
