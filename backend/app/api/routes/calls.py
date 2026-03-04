@@ -1,10 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.api.models import CallCreate, CallResponse
 from app.api.routes.targets import get_target_data
-from app.analytics.analyzer import CallAnalyzer
 from app.voice.pipeline import VoicePipeline, CallConfig
 from app import db
 
@@ -43,39 +42,84 @@ async def initiate_call(body: CallCreate):
 
 
 
+@router.get("")
+async def list_calls():
+    calls = await db.list_calls()
+    return calls
+
+
 @router.post("/{call_id}/end")
-async def end_call(call_id: str):
-    pipeline = _pipelines.get(call_id)
-    if not pipeline:
-        raise HTTPException(status_code=404, detail="Call not found")
-    await pipeline.stop()
-    await db.end_call(call_id, pipeline.transcript)
-    return {"status": "ended", "transcript": pipeline.transcript}
+async def end_call(call_id: str, request: Request):
+    pipeline = _pipelines.pop(call_id, None)
+    if pipeline:
+        await pipeline.stop()
+        await db.end_call(call_id, pipeline.transcript)
+        transcript = pipeline.transcript
+    else:
+        # Browser-mode calls aren't in _pipelines (managed by ws_voice.py).
+        # The transcript may already be saved by the WS finally block.
+        row = await db.get_call(call_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Call not found")
+        if row["status"] == "active":
+            await db.end_call(call_id, row.get("transcript", []))
+        transcript = row.get("transcript", [])
+
+    # Enqueue async analysis job (idempotent — skip if already running)
+    row = await db.get_call(call_id)
+    if row and row.get("analysis_status") not in ("analyzing", "analyzed"):
+        await db.update_analysis_status(call_id, "analyzing")
+        queue = request.app.state.task_queue
+        await queue.enqueue("analysis", {"call_id": call_id})
+
+    return {"status": "ended", "transcript": transcript}
 
 
 @router.get("/{call_id}/analysis")
 async def get_analysis(call_id: str):
+    # Check if call is still active in memory
     pipeline = _pipelines.get(call_id)
-    if not pipeline:
-        raise HTTPException(status_code=404, detail="Call not found")
-    if pipeline.is_active:
-        raise HTTPException(status_code=400, detail="Call is still active. End it first.")
-    if not pipeline.transcript:
-        raise HTTPException(status_code=400, detail="No transcript available")
+    if pipeline and pipeline.is_active:
+        raise HTTPException(status_code=400, detail="Call is still active")
 
-    analyzer = CallAnalyzer()
-    analysis = await analyzer.analyze(pipeline.transcript)
-    await db.save_analysis(call_id, analysis)
-    return analysis
+    # Look up call in DB
+    row = await db.get_call(call_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    if row["analysis"]:
+        return row["analysis"]
+    if row.get("analysis_status") == "analyzing":
+        return {"status": "analyzing"}
+    if row.get("analysis_status") == "failed":
+        return {"status": "failed"}
+    return {"status": "pending"}
 
 
 @router.get("/{call_id}")
 async def get_call(call_id: str):
+    # Check in-memory pipelines first (active calls)
     pipeline = _pipelines.get(call_id)
-    if not pipeline:
+    if pipeline:
+        return {
+            "call_id": call_id,
+            "is_active": pipeline.is_active,
+            "transcript": pipeline.transcript,
+            "mode": pipeline.config.mode if hasattr(pipeline, "config") else None,
+            "target_name": pipeline.config.target_name if hasattr(pipeline, "config") else None,
+            "target_id": "",
+            "status": "active" if pipeline.is_active else "ended",
+            "analysis": None,
+            "analysis_status": None,
+            "created_at": None,
+            "ended_at": None,
+        }
+
+    # Fall back to DB
+    row = await db.get_call(call_id)
+    if not row:
         raise HTTPException(status_code=404, detail="Call not found")
     return {
-        "call_id": call_id,
-        "is_active": pipeline.is_active,
-        "transcript": pipeline.transcript,
+        **row,
+        "is_active": row["status"] == "active",
     }

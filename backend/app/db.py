@@ -47,11 +47,21 @@ async def init_db(db_path: str | Path | None = None) -> None:
             status TEXT DEFAULT 'active',
             transcript TEXT DEFAULT '[]',
             analysis TEXT,
+            analysis_status TEXT DEFAULT NULL,
             created_at TEXT,
             ended_at TEXT
         );
         """
     )
+
+    # Migrate existing databases: add analysis_status column if missing
+    try:
+        await _db.execute("ALTER TABLE calls ADD COLUMN analysis_status TEXT DEFAULT NULL")
+        await _db.commit()
+    except Exception:
+        # Column already exists — ignore
+        pass
+
     await _db.commit()
 
 
@@ -135,6 +145,16 @@ async def get_stuck_enriching() -> list[dict]:
     return [_row_to_target(row) for row in rows]
 
 
+async def get_stuck_analyzing() -> list[dict]:
+    """Return calls stuck at 'analyzing' status (no analysis yet)."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM calls WHERE analysis_status = 'analyzing' AND analysis IS NULL"
+    )
+    rows = await cursor.fetchall()
+    return [_row_to_call(row) for row in rows]
+
+
 async def delete_target(target_id: str) -> bool:
     db = await get_db()
     cursor = await db.execute("DELETE FROM targets WHERE id = ?", (target_id,))
@@ -177,8 +197,17 @@ async def end_call(call_id: str, transcript: list) -> None:
 async def save_analysis(call_id: str, analysis: dict) -> None:
     db = await get_db()
     await db.execute(
-        "UPDATE calls SET analysis = ? WHERE call_id = ?",
+        "UPDATE calls SET analysis = ?, analysis_status = 'analyzed' WHERE call_id = ?",
         (json.dumps(analysis), call_id),
+    )
+    await db.commit()
+
+
+async def update_analysis_status(call_id: str, status: str) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE calls SET analysis_status = ? WHERE call_id = ?",
+        (status, call_id),
     )
     await db.commit()
 
@@ -206,6 +235,7 @@ def _row_to_call(row: aiosqlite.Row) -> dict:
         "status": row["status"],
         "transcript": json.loads(row["transcript"]) if row["transcript"] else [],
         "analysis": json.loads(row["analysis"]) if row["analysis"] else None,
+        "analysis_status": row["analysis_status"],
         "created_at": row["created_at"],
         "ended_at": row["ended_at"],
     }

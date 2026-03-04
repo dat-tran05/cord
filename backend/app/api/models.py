@@ -35,6 +35,9 @@ class CallResponse(BaseModel):
     target_name: str
     status: str
     mode: str
+    created_at: str | None = None
+    ended_at: str | None = None
+    analysis_status: str | None = None
 
 
 class TextInput(BaseModel):

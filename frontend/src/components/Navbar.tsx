@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Phone, Users, LayoutDashboard, Plus } from "lucide-react";
+import { Phone, PhoneCall, Users, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWS } from "@/hooks/WebSocketProvider";
 import { api, type Target } from "@/lib/api";
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/targets", label: "Targets", icon: Users },
+  { href: "/calls", label: "Calls", icon: PhoneCall },
 ];
 
 export function Navbar() {

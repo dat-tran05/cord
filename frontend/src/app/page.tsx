@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { Radio } from "lucide-react";
 import { useWS } from "@/hooks/WebSocketProvider";
 import { Navbar } from "@/components/Navbar";
@@ -7,6 +8,11 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export default function Dashboard() {
   const { events } = useWS();
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [events]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -20,7 +26,7 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold">Event Stream</h2>
           </div>
           <Card>
-            <CardContent className="max-h-72 overflow-y-auto p-0">
+            <CardContent className="max-h-[32rem] overflow-y-auto p-0">
               <div className="divide-y divide-border font-mono text-xs">
                 {events.length === 0 ? (
                   <p className="px-4 py-8 text-center text-muted-foreground font-sans text-sm">
@@ -41,6 +47,7 @@ export default function Dashboard() {
                     </div>
                   ))
                 )}
+                <div ref={bottomRef} />
               </div>
             </CardContent>
           </Card>

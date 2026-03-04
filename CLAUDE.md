@@ -55,11 +55,10 @@ cord/
 │   │   ├── research/enricher.py   # Two-phase target enrichment (web search → tactical analysis)
 │   │   ├── analytics/             # Post-call analyzer + Deepgram transcription
 │   │   └── services/              # Redis client, task queue, job handlers
-│   └── tests/unit/                # 8 files, 40 tests
 └── frontend/src/
-    ├── app/                        # Pages: dashboard(/), targets, calls/[id], analysis
-    ├── components/                 # VoiceChat, CallCard, NewCallDialog, Navbar, ui/
-    ├── hooks/                      # useVoiceChat (audio bridge), useWebSocket (event stream)
+    ├── app/                        # Pages: dashboard(/), targets, calls (list), calls/[id] (detail)
+    ├── components/                 # VoiceChat, AnalyticsSheet, CallCard, NewCallDialog, Navbar, ui/
+    ├── hooks/                      # useVoiceChat (audio bridge), useWebSocket (event stream), WebSocketProvider
     └── lib/                        # api.ts (typed REST client), utils.ts
 ```
 
@@ -98,7 +97,7 @@ The API uses the **GA format** which differs from beta docs you may find online:
 - `app/research/enricher.py` — Two-phase enrichment: web research (Responses API + web_search_preview) → tactical analysis (Chat Completions + structured JSON schema via gpt-5.2)
 - `app/services/task_queue.py` — Redis-backed async job queue with crash recovery (pending→processing→completed, re-enqueues on startup)
 - `app/services/handlers.py` — Registers `"enrichment"` job type; auto-enqueued on target creation
-- `app/analytics/analyzer.py` — Post-call GPT analysis (effectiveness score, objection handling, sentiment arc, improvement suggestions)
+- `app/analytics/analyzer.py` — Post-call GPT analysis (effectiveness score, objection handling, sentiment arc, improvement suggestions), runs as async job via task queue
 
 ### Key Frontend Files
 - `src/hooks/useVoiceChat.ts` — WebSocket to `/ws/voice/{callId}`, mic capture (ScriptProcessorNode), audio playback (AudioContext), Float32↔PCM16 conversion
@@ -108,10 +107,11 @@ The API uses the **GA format** which differs from beta docs you may find online:
 
 ### API Endpoints
 - `POST/GET /api/targets`, `DELETE /api/targets/{id}` — Target CRUD (create auto-enqueues enrichment)
+- `GET /api/calls` — List all calls (ordered by created_at DESC)
 - `POST /api/calls` — Create call (target_id, mode: "text"|"browser"|"twilio")
-- `POST /api/calls/{id}/end` — End call, save transcript
-- `GET /api/calls/{id}/analysis` — Run/fetch GPT analysis on transcript
-- `GET /api/calls/{id}` — Get active call state
+- `POST /api/calls/{id}/end` — End call, save transcript, enqueue async analysis job
+- `GET /api/calls/{id}/analysis` — Read-only: returns analysis or `{status: "analyzing"|"failed"|"pending"}`
+- `GET /api/calls/{id}` — Get call detail (falls back to DB for historical calls)
 - `WS /ws/voice/{call_id}` — Browser↔OpenAI audio bridge (JSON messages: start/audio/text/stop)
 - `WS /ws/events` — Dashboard live event stream (Redis pub/sub fan-out)
 - `GET /health` — Health check
@@ -124,11 +124,9 @@ Frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`) and `N
 
 ## Testing Notes
 
-All 40 unit tests use mocks (no real API calls). Tests in `backend/tests/unit/` cover: prompt builder, pipeline config/lifecycle, realtime session formatting, Redis client, API routes, analyzer, enricher, enrichment flow.
-- Redis tests use `fakeredis.FakeAsyncRedis`
-- DB tests use `aiosqlite` with `":memory:"`
-- API integration tests use `httpx.AsyncClient` with `ASGITransport`
-- Enrichment flow tests verify status transitions: `pending → enriching → enriched/failed`
+No unit tests currently (removed as irrelevant). Verify manually:
+- Backend: `cd backend && python -c "from app.main import app; print('OK')"`
+- Frontend: `cd frontend && npx next build` (type-checks + builds)
 
 ## Design History
 

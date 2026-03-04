@@ -37,12 +37,23 @@ export interface Call {
   target_name: string;
   status: string;
   mode: string;
+  created_at?: string;
+  ended_at?: string;
+  analysis_status?: string | null;
 }
 
 export interface CallDetail {
   call_id: string;
   is_active: boolean;
+  target_id: string;
+  target_name: string;
+  mode: string;
+  status: string;
   transcript: { role: string; content: string }[];
+  analysis: Analysis | null;
+  analysis_status: string | null;
+  created_at: string | null;
+  ended_at: string | null;
 }
 
 export const api = {
@@ -63,6 +74,7 @@ export const api = {
       ),
   },
   calls: {
+    list: () => fetchApi<Call[]>("/api/calls"),
     create: (data: { target_id: string; mode: string }) =>
       fetchApi<Call>("/api/calls", {
         method: "POST",
@@ -75,7 +87,7 @@ export const api = {
         { method: "POST" },
       ),
     getAnalysis: (callId: string) =>
-      fetchApi<Analysis>(`/api/calls/${callId}/analysis`),
+      fetchApi<Analysis | { status: string }>(`/api/calls/${callId}/analysis`),
   },
 };
 

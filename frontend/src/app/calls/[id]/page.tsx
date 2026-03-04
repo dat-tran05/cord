@@ -1,126 +1,117 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { ArrowLeft, PhoneOff } from "lucide-react";
+import { useParams } from "next/navigation";
+import { ArrowLeft, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { api, type CallDetail } from "@/lib/api";
 import { VoiceChat } from "@/components/VoiceChat";
+import { AnalyticsSheet } from "@/components/AnalyticsSheet";
+import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-function CallTranscriptView({ call, id }: { call: CallDetail; id: string }) {
-  const router = useRouter();
-  const [localCall, setLocalCall] = useState(call);
+function TranscriptView({ call }: { call: CallDetail }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setLocalCall(call);
-  }, [call]);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [localCall.transcript]);
-
-  const endCall = async () => {
-    await api.calls.end(id);
-    router.push("/");
-  };
+  }, [call.transcript]);
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-background/80 backdrop-blur-lg px-4 h-14">
-        <div className="flex items-center gap-3">
-          <Link href="/">
+    <div className="min-h-screen bg-background">
+      <Navbar />
+
+      {/* Sub-header */}
+      <div className="border-b border-border/60 bg-background">
+        <div className="mx-auto flex h-12 max-w-6xl items-center gap-3 px-6">
+          <Link href="/calls">
             <Button variant="ghost" size="icon-sm">
               <ArrowLeft className="size-4" />
             </Button>
           </Link>
-          <h1 className="text-sm font-semibold">Call</h1>
-          {localCall.is_active && (
-            <Badge variant="outline" className="bg-green-500/15 text-green-400 border-green-500/20">
-              Live
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {localCall.is_active ? (
-            <Button variant="destructive" size="sm" onClick={endCall}>
-              <PhoneOff className="size-3.5" />
-              End Call
-            </Button>
-          ) : (
-            <Link href={`/calls/${id}/analysis`}>
-              <Button variant="outline" size="sm">
-                View Analysis
-              </Button>
-            </Link>
-          )}
-        </div>
-      </header>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="mx-auto max-w-2xl space-y-4">
-          {localCall.transcript.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground pt-12">
-              Waiting for conversation to start...
-            </p>
-          )}
-          {localCall.transcript.map((msg, i) => (
-            <div
-              key={i}
-              className={cn(
-                "flex",
-                msg.role === "agent" ? "justify-start" : "justify-end"
-              )}
+          <h1 className="text-sm font-semibold">{call.target_name}</h1>
+          {call.is_active ? (
+            <Badge
+              variant="outline"
+              className="bg-green-500/15 text-green-400 border-green-500/20"
             >
+              Active
+            </Badge>
+          ) : (
+            <Badge variant="secondary">Ended</Badge>
+          )}
+          <div className="ml-auto">
+            {!call.is_active && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSheetOpen(true)}
+              >
+                <BarChart3 className="size-3.5" />
+                Analytics
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Transcript */}
+      <div className="mx-auto max-w-2xl px-4 py-6">
+        <div className="space-y-4">
+          {call.transcript.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground pt-12">
+              No transcript available.
+            </p>
+          ) : (
+            call.transcript.map((msg, i) => (
               <div
+                key={i}
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-                  msg.role === "agent"
-                    ? "bg-card text-card-foreground border border-border/50"
-                    : "bg-primary text-primary-foreground"
+                  "flex",
+                  msg.role === "agent" ? "justify-start" : "justify-end"
                 )}
               >
-                {msg.content}
+                <div
+                  className={cn(
+                    "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                    msg.role === "agent"
+                      ? "bg-card text-card-foreground border border-border/50"
+                      : "bg-primary text-primary-foreground"
+                  )}
+                >
+                  {msg.content}
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      <AnalyticsSheet
+        callId={call.call_id}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   );
 }
 
 export default function CallPage() {
   const { id } = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
   const [call, setCall] = useState<CallDetail | null>(null);
-  const [mode, setMode] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    const urlMode = searchParams.get("mode");
-    if (urlMode) {
-      setMode(urlMode);
-    }
     api.calls
       .get(id)
-      .then((data) => {
-        setCall(data);
-        if (!urlMode) {
-          setMode(
-            (data as CallDetail & { mode?: string }).mode || "text"
-          );
-        }
-      })
+      .then(setCall)
       .catch(() => {});
-  }, [id, searchParams]);
+  }, [id]);
 
-  if (!call || !mode) {
+  if (!call) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -131,9 +122,11 @@ export default function CallPage() {
     );
   }
 
-  if (mode === "browser") {
+  // Active browser call: show VoiceChat
+  if (call.is_active && call.mode === "browser") {
     return <VoiceChat callId={id} targetProfile={{}} />;
   }
 
-  return <CallTranscriptView call={call} id={id} />;
+  // Everything else: transcript view with analytics
+  return <TranscriptView call={call} />;
 }

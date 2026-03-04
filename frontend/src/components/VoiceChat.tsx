@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Mic, MicOff, PhoneOff, Send } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
   const [ended, setEnded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
+  const endedRef = useRef(false);
 
   useEffect(() => {
     if (connected && !startedRef.current) {
@@ -49,22 +50,48 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
     setInput("");
   };
 
-  const handleEnd = () => {
-    stop();
-    onEnd?.();
-    router.push("/");
+  const endCall = async () => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    stop(); // sends "stop" over WS to halt audio
+    setEnded(true);
+    try {
+      await api.calls.end(callId); // awaits DB write + enqueues analysis
+    } catch {
+      // WS finally block may have already ended the call — that's fine
+    }
   };
+
+  const handleEnd = async () => {
+    await endCall();
+    onEnd?.();
+    router.push(`/calls/${callId}`);
+  };
+
+  const handleBackArrow = async () => {
+    await endCall();
+    router.push("/calls");
+  };
+
+  useEffect(() => {
+    return () => {
+      // Component unmounting — end the call if still active
+      if (!endedRef.current) {
+        stop();
+        // Fire-and-forget since we're unmounting
+        api.calls.end(callId).catch(() => {});
+      }
+    };
+  }, [callId, stop]);
 
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-background/80 backdrop-blur-lg px-4 h-14">
         <div className="flex items-center gap-3">
-          <Link href="/">
-            <Button variant="ghost" size="icon-sm">
-              <ArrowLeft className="size-4" />
-            </Button>
-          </Link>
+          <Button variant="ghost" size="icon-sm" onClick={handleBackArrow}>
+            <ArrowLeft className="size-4" />
+          </Button>
           <h1 className="text-sm font-semibold">Voice Call</h1>
           <span
             className={cn(
