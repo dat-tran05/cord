@@ -213,8 +213,9 @@ async def _outbound_loop(
                 })
 
         elif event_type == "input_audio_buffer.speech_started":
-            # User started speaking — browser can use this to show visual feedback
-            pass
+            # User started speaking — tell browser to flush queued agent audio
+            # so the user's voice takes priority (OpenAI auto-cancels the response)
+            await ws.send_json({"type": "clear_audio"})
 
         elif event_type == "conversation.item.input_audio_transcription.completed":
             # User speech transcribed

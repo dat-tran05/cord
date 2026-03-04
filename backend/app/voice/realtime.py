@@ -35,7 +35,14 @@ class SessionConfig:
         default_factory=lambda: {"type": "audio/pcm", "rate": 24000}
     )
     tools: list[dict] = field(default_factory=list)
-    turn_detection: dict = field(default_factory=lambda: {"type": "server_vad"})
+    turn_detection: dict = field(
+        default_factory=lambda: {
+            "type": "server_vad",
+            "threshold": 0.5,
+            "prefix_padding_ms": 200,
+            "silence_duration_ms": 300,
+        }
+    )
     input_audio_transcription: dict = field(
         default_factory=lambda: {"model": "gpt-4o-mini-transcribe", "language": "en"}
     )
