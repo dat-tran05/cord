@@ -132,13 +132,15 @@ async def voice_websocket(ws: WebSocket, call_id: str):
                 "transcript_length": len(pipeline._transcript) if pipeline else 0,
             })
 
-        # Save transcript and enqueue analysis if we have transcript entries
-        if pipeline and pipeline._transcript:
+        # Always end the call in DB so it doesn't stay stuck as 'active'
+        if pipeline:
             try:
                 await db.end_call(call_id, pipeline._transcript)
-                await db.update_analysis_status(call_id, "analyzing")
-                queue = ws.app.state.task_queue
-                await queue.enqueue("analysis", {"call_id": call_id})
+                # Only enqueue analysis if there's actual conversation
+                if pipeline._transcript:
+                    await db.update_analysis_status(call_id, "analyzing")
+                    queue = ws.app.state.task_queue
+                    await queue.enqueue("analysis", {"call_id": call_id})
             except Exception:
                 logger.exception(f"Failed to save transcript/enqueue analysis for {call_id}")
 

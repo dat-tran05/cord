@@ -61,9 +61,16 @@ function TranscriptView({ call }: { call: CallDetail }) {
       <div className="mx-auto max-w-2xl px-4 py-6">
         <div className="space-y-4">
           {call.transcript.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground pt-12">
-              No transcript available.
-            </p>
+            <div className="flex flex-col items-center gap-2 pt-16">
+              <p className="text-sm text-muted-foreground">
+                No conversation was recorded for this call.
+              </p>
+              {!call.is_active && (
+                <p className="text-xs text-muted-foreground/60">
+                  The call may have ended before any audio was exchanged.
+                </p>
+              )}
+            </div>
           ) : (
             call.transcript.map((msg, i) => (
               <div
