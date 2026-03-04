@@ -12,11 +12,8 @@ CORD is a voice persuasion agent that calls MIT students and sells them a pen. I
 ```bash
 pip install -e ".[dev]"                          # Install with dev deps
 uvicorn app.main:app --reload --port 8000        # Dev server
-pytest tests/ -v                                 # All tests (40 total)
-pytest tests/unit/test_pipeline.py -v            # Single file
-pytest tests/unit/test_prompt.py::TestBuildRealtimePrompt::test_includes_target_name -v  # Single test
-ruff check app/ tests/                           # Lint
-ruff format app/ tests/                          # Format
+ruff check app/                                  # Lint
+ruff format app/                                 # Format
 ```
 
 ### Frontend (TypeScript, from `frontend/`)
@@ -96,7 +93,7 @@ The API uses the **GA format** which differs from beta docs you may find online:
 - `app/db.py` — aiosqlite layer: `targets` table (with enrichment_status, enriched_profile JSON) + `calls` table (with transcript JSON, analysis JSON)
 - `app/research/enricher.py` — Two-phase enrichment: web research (Responses API + web_search_preview) → tactical analysis (Chat Completions + structured JSON schema via gpt-5.2)
 - `app/services/task_queue.py` — Redis-backed async job queue with crash recovery (pending→processing→completed, re-enqueues on startup)
-- `app/services/handlers.py` — Registers `"enrichment"` job type; auto-enqueued on target creation
+- `app/services/handlers.py` — Registers `"enrichment"` + `"analysis"` job types; enrichment on target creation, analysis on call end
 - `app/analytics/analyzer.py` — Post-call GPT analysis (effectiveness score, objection handling, sentiment arc, improvement suggestions), runs as async job via task queue
 
 ### Key Frontend Files
@@ -131,6 +128,14 @@ No unit tests currently (removed as irrelevant). Verify manually:
 ## Design History
 
 Originally designed as dual-model (Realtime + GPT-5.2 supervisor with FSM). Pivoted to single-prompt architecture because the rigid state machine conflicted with natural conversation flow and the supervisor added latency. See `docs/plans/` for full design history.
+
+## Gotchas
+
+- Browser-mode voice calls create their pipeline locally in `ws_voice.py`, NOT in `_pipelines` dict. Any code looking up `_pipelines` must fall back to DB for browser calls.
+- Transcript entries use `{role, content}` in DB but `{role, text}` in VoiceChat WebSocket messages. Use the right field for the data source.
+- Backend import verification must run from `backend/` dir (needs `.env` for pydantic-settings): `cd backend && python -c "from app.main import app"`
+- SQLite schema migrations need `ALTER TABLE ADD COLUMN` in try/except — table may already have the column.
+- `radix-ui ^1.4.3` is monolithic: import from `radix-ui`, never `@radix-ui/*`.
 
 ## Remaining Work
 
