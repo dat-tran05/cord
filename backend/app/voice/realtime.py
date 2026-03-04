@@ -44,7 +44,10 @@ class SessionConfig:
         }
     )
     input_audio_transcription: dict = field(
-        default_factory=lambda: {"model": "gpt-4o-mini-transcribe", "language": "en"}
+        default_factory=lambda: {"model": "gpt-4o-transcribe", "language": "en"}
+    )
+    noise_reduction: dict = field(
+        default_factory=lambda: {"type": "near_field"}
     )
 
     def to_session_update_event(self) -> dict:
@@ -59,6 +62,7 @@ class SessionConfig:
                         "format": self.input_audio_format,
                         "transcription": self.input_audio_transcription,
                         "turn_detection": self.turn_detection,
+                        "noise_reduction": self.noise_reduction,
                     },
                     "output": {
                         "format": self.output_audio_format,
