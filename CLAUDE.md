@@ -52,6 +52,15 @@ cord/
 │   │   ├── research/enricher.py   # Two-phase target enrichment (web search → tactical analysis)
 │   │   ├── analytics/             # Post-call analyzer + Deepgram transcription
 │   │   └── services/              # Redis client, task queue, job handlers
+│   └── tests/simulation/          # Distributed simulation test framework
+│       ├── personas.py            # StudentPersona presets + random generator
+│       ├── simulator.py           # GPT-5.2 student simulator
+│       ├── call_runner.py         # Turn-by-turn conversation orchestrator
+│       ├── judge.py               # G-Eval multi-criteria conversation judge
+│       ├── metrics.py             # SimulationReport aggregation
+│       ├── sim_queue.py           # Redis queue protocol (cord:sim:* namespace)
+│       ├── worker.py              # Standalone async worker (semaphore concurrency)
+│       └── dispatch.py            # CLI dispatcher (enqueue + progress + report)
 └── frontend/src/
     ├── app/                        # Pages: dashboard(/), targets, calls (list), calls/[id] (detail)
     ├── components/                 # VoiceChat, AnalyticsSheet, CallCard, NewCallDialog, Navbar, ui/
@@ -121,9 +130,21 @@ Frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`) and `N
 
 ## Testing Notes
 
-No unit tests currently (removed as irrelevant). Verify manually:
+No unit tests (removed as irrelevant). Verify imports manually:
 - Backend: `cd backend && python -c "from app.main import app; print('OK')"`
 - Frontend: `cd frontend && npx next build` (type-checks + builds)
+
+### Simulation Tests (from `backend/`)
+```bash
+# Layer 1: In-process (pytest, ~$2.30 for presets)
+pytest tests/simulation/ -k preset -v -s --timeout=300
+
+# Layer 2: Distributed (requires redis-server running)
+python -m tests.simulation.worker --concurrency 10          # Terminal A
+python -m tests.simulation.dispatch --presets --timeout 300  # Terminal B
+python -m tests.simulation.worker --concurrency 5 --recover  # Crash recovery
+```
+Simulation tests call the OpenAI API and cost real money (~$0.46/call).
 
 ## Design History
 
@@ -136,7 +157,10 @@ Originally designed as dual-model (Realtime + GPT-5.2 supervisor with FSM). Pivo
 - Backend import verification must run from `backend/` dir (needs `.env` for pydantic-settings): `cd backend && python -c "from app.main import app"`
 - SQLite schema migrations need `ALTER TABLE ADD COLUMN` in try/except — table may already have the column.
 - `radix-ui ^1.4.3` is monolithic: import from `radix-ui`, never `@radix-ui/*`.
+- Use `max_completion_tokens` (not `max_tokens`) for gpt-5.2 Chat Completions — the older parameter name causes errors.
+- Redis namespaces: production queue uses `cord:queue:*`, simulation uses `cord:sim:*`. Don't mix them.
+- pytest filter with brackets needs quoting: use `-k "preset and easy_sell"` not `-k "preset[easy_sell]"` (shell glob issue).
 
 ## Remaining Work
 
-See `docs/TODO.md` for phases 9-12: Twilio phone calls (audio format conversion mulaw↔PCM16), simulated caller tests (GPT-5.2 as student), Docker Compose, distributed worker scaling.
+See `docs/TODO.md` for remaining phases: Twilio phone calls (mulaw↔PCM16 conversion), Docker Compose, Layer 3 stress testing (50-100 concurrent). Simulation framework (Layers 1-2) is complete — see `docs/plans/2026-03-03-*` for design docs.
