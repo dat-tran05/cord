@@ -125,6 +125,16 @@ def _row_to_target(row: aiosqlite.Row) -> dict:
     }
 
 
+async def get_stuck_enriching() -> list[dict]:
+    """Return targets stuck at 'enriching' status (no profile yet)."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM targets WHERE enrichment_status = 'enriching' AND enriched_profile IS NULL"
+    )
+    rows = await cursor.fetchall()
+    return [_row_to_target(row) for row in rows]
+
+
 async def delete_target(target_id: str) -> bool:
     db = await get_db()
     cursor = await db.execute("DELETE FROM targets WHERE id = ?", (target_id,))

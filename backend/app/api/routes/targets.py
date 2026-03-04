@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import uuid
 
@@ -6,29 +5,17 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.models import TargetCreate, TargetResponse
 from app import db
-from app.research.enricher import ProfileEnricher
+from app.services.task_queue import TaskQueue
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/targets", tags=["targets"])
-
-
-async def _run_enrichment(target_id: str, seed_data: dict) -> None:
-    """Run enrichment in background — updates DB when done."""
-    try:
-        await db.update_enrichment(target_id, "enriching")
-        enricher = ProfileEnricher()
-        enriched = await enricher.enrich(seed_data)
-        await db.update_enrichment(target_id, "enriched", enriched)
-    except Exception:
-        logger.exception(f"Enrichment failed for target {target_id}")
-        await db.update_enrichment(target_id, "failed")
 
 
 @router.post("", status_code=201, response_model=TargetResponse)
 async def create_target(body: TargetCreate):
     target_id = str(uuid.uuid4())[:8]
     target = await db.create_target(target_id, body.model_dump())
-    asyncio.create_task(_run_enrichment(target_id, body.model_dump()))
+    await TaskQueue().enqueue("enrichment", {"target_id": target_id, "target_data": body.model_dump()})
     return target
 
 

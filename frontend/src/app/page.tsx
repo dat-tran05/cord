@@ -18,9 +18,12 @@ export default function Dashboard() {
   const [showNewCall, setShowNewCall] = useState(false);
   const { events, connected } = useWebSocket();
 
+  // Re-fetch targets on mount and whenever the WebSocket reconnects
   useEffect(() => {
-    api.targets.list().then(setTargets).catch(() => {});
-  }, []);
+    if (connected) {
+      api.targets.list().then(setTargets).catch(console.error);
+    }
+  }, [connected]);
 
   const handleNewCall = async (targetId: string, mode: string) => {
     const call = await api.calls.create({ target_id: targetId, mode });

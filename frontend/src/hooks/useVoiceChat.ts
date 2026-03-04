@@ -21,7 +21,7 @@ export function useVoiceChat(callId: string) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
-  const [stage, setStage] = useState("pre_call");
+
   const [micActive, setMicActive] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -60,9 +60,7 @@ export function useVoiceChat(callId: string) {
               { role: data.role, text: data.text },
             ]);
             break;
-          case "stage":
-            setStage(data.stage);
-            break;
+
           case "audio":
             playAudioChunk(data.audio);
             break;
@@ -234,7 +232,6 @@ export function useVoiceChat(callId: string) {
     connected,
     error,
     transcript,
-    stage,
     micActive,
     toggleMic,
     sendText,

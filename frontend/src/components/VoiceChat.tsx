@@ -5,18 +5,7 @@ import Link from "next/link";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
-const STAGE_STYLES: Record<string, string> = {
-  pre_call: "bg-muted text-muted-foreground",
-  intro: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-  pitch: "bg-purple-500/15 text-purple-400 border-purple-500/20",
-  objection: "bg-orange-500/15 text-orange-400 border-orange-500/20",
-  close: "bg-green-500/15 text-green-400 border-green-500/20",
-  logistics: "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
-  wrap_up: "bg-muted text-muted-foreground",
-};
 
 interface VoiceChatProps {
   callId: string;
@@ -29,7 +18,6 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
     connected,
     error,
     transcript,
-    stage,
     micActive,
     toggleMic,
     sendText,
@@ -76,12 +64,6 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
             </Button>
           </Link>
           <h1 className="text-sm font-semibold">Voice Call</h1>
-          <Badge
-            variant="outline"
-            className={cn("capitalize", STAGE_STYLES[stage] || "")}
-          >
-            {stage.replace("_", " ")}
-          </Badge>
           <span
             className={cn(
               "size-2 rounded-full",

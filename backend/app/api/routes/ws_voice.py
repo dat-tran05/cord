@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app import db
 from app.services.redis_client import RedisService
 from app.voice.pipeline import CallConfig, VoicePipeline
 from app.voice.realtime import RealtimeSession, SessionConfig
@@ -43,7 +44,16 @@ async def voice_websocket(ws: WebSocket, call_id: str):
             await ws.close()
             return
 
-        target_profile = start_msg.get("target_profile", {})
+        # Look up target data from DB using the call record (includes enrichment)
+        call_record = await db.get_call(call_id)
+        target_profile = {}
+        if call_record and call_record.get("target_id"):
+            target_data = await db.get_target(call_record["target_id"])
+            if target_data:
+                target_profile = target_data
+        # Fall back to what the frontend sent if DB lookup fails
+        if not target_profile:
+            target_profile = start_msg.get("target_profile", {})
         target_name = target_profile.get("name", "Unknown")
 
         # Create pipeline
