@@ -204,6 +204,37 @@ async def get_run_progress(redis: Redis, run_id: str) -> dict:
     }
 
 
+async def recover_stale_jobs(redis: Redis) -> int:
+    """Move all jobs from processing back to pending. Call on worker startup.
+
+    Handles crash recovery: if a worker died mid-job, those jobs are stuck
+    in the processing list. This moves them back so another worker can retry.
+
+    WARNING: Only use when no other workers are actively running — this moves
+    ALL processing jobs, including ones another worker might be working on.
+    Same pattern as TaskQueue._recover_processing() in app/services/task_queue.py.
+    """
+    count = 0
+    while True:
+        job_id = await redis.rpoplpush(SIM_PROCESSING, SIM_PENDING)
+        if job_id is None:
+            break
+        key = f"{SIM_JOB_PREFIX}{job_id}"
+        await redis.hset(key, mapping={"status": "pending", "worker_id": ""})
+        count += 1
+    return count
+
+
+async def get_job_statuses(redis: Redis, job_ids: list[str]) -> dict[str, list[str]]:
+    """Batch-fetch status of all jobs. Returns {status: [job_ids]}."""
+    by_status: dict[str, list[str]] = {}
+    for job_id in job_ids:
+        data = await redis.hgetall(f"{SIM_JOB_PREFIX}{job_id}")
+        status = data.get("status", "unknown")
+        by_status.setdefault(status, []).append(job_id)
+    return by_status
+
+
 async def get_job_results(
     redis: Redis,
     job_ids: list[str],
@@ -225,7 +256,7 @@ async def get_job_results(
 
 **Step 2: Verify it imports correctly**
 
-Run: `cd backend && python -c "from tests.simulation.sim_queue import create_job, pull_job, store_result; print('OK')"`
+Run: `cd backend && python -c "from tests.simulation.sim_queue import create_job, pull_job, store_result, recover_stale_jobs, get_job_statuses; print('OK')"`
 Expected: `OK`
 
 **Step 3: Commit**
@@ -272,7 +303,7 @@ from redis.asyncio import Redis
 from app.config import settings
 from tests.simulation.call_runner import CallRunner
 from tests.simulation.judge import ConversationJudge
-from tests.simulation.sim_queue import mark_failed, pull_job, store_result
+from tests.simulation.sim_queue import mark_failed, pull_job, recover_stale_jobs, store_result
 
 logging.basicConfig(
     level=logging.INFO,
@@ -300,6 +331,14 @@ class SimWorker:
         """Signal the worker to stop pulling new jobs. Synchronous — safe for signal handlers."""
         logger.info("Shutdown requested")
         self._shutdown.set()
+
+    async def recover(self) -> None:
+        """Recover stale jobs from processing queue (crash recovery)."""
+        recovered = await recover_stale_jobs(self.redis)
+        if recovered:
+            logger.info("Recovered %d stale jobs from processing queue", recovered)
+        else:
+            logger.info("No stale jobs to recover")
 
     async def run(self) -> None:
         """Main loop: pull jobs and execute concurrently. Returns when shutdown is requested."""
@@ -383,9 +422,18 @@ async def main() -> None:
         help="Max concurrent simulations (default: 10)",
     )
     parser.add_argument("--redis-url", default=settings.redis_url)
+    parser.add_argument(
+        "--recover",
+        action="store_true",
+        help="Recover stale jobs from processing queue before starting. "
+        "Only use when no other workers are running.",
+    )
     args = parser.parse_args()
 
     worker = SimWorker(redis_url=args.redis_url, concurrency=args.concurrency)
+
+    if args.recover:
+        await worker.recover()
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -454,6 +502,7 @@ from tests.simulation.sim_queue import (
     create_job,
     create_run,
     get_job_results,
+    get_job_statuses,
     get_run_progress,
     set_run_job_ids,
 )
@@ -529,12 +578,30 @@ async def main() -> None:
         done = progress["completed"] + progress["failed"]
         print(f"\nInterrupted ({done}/{progress['total']} completed)")
 
+    # --- Diagnostics phase ---
+    statuses = await get_job_statuses(redis, job_ids)
+    print("\n=== Job Status Breakdown ===")
+    for status in ("completed", "failed", "processing", "pending"):
+        count = len(statuses.get(status, []))
+        extra = ""
+        if status == "processing" and count > 0:
+            extra = "  (stale — worker likely crashed)"
+        if status == "pending" and count > 0:
+            extra = "  (never picked up)"
+        print(f"  {status:>12}: {count}{extra}")
+    print(f"  {'total':>12}: {len(job_ids)}")
+
+    stale = len(statuses.get("processing", []))
+    if stale:
+        print(f"\nWARNING: {stale} jobs stuck in processing. "
+              "Run a worker with --recover to re-enqueue them.")
+
     # --- Collect phase ---
     results = await get_job_results(redis, job_ids)
     pairs = [r for r in results if r is not None]
 
     if not pairs:
-        print("No completed results to report.")
+        print("\nNo completed results to report.")
         await redis.aclose()
         sys.exit(1)
 
@@ -582,7 +649,7 @@ git commit -m "style: lint distributed simulation files"
 
 ---
 
-### Task 5: End-to-End Validation
+### Task 5: End-to-End Validation — Happy Path
 
 **Prerequisites:** Redis must be running locally (`redis-server` or `docker run -p 6379:6379 redis:7-alpine`).
 
@@ -599,7 +666,7 @@ Expected output:
 2026-03-03 ... INFO [sim_worker] worker-abc123 started (concurrency=3)
 ```
 
-**Step 2: Run dispatcher with 2 presets (quick validation)**
+**Step 2: Run dispatcher with presets**
 
 Run in another terminal:
 ```bash
@@ -613,10 +680,16 @@ Enqueued 5 simulation jobs (run abc12345)
 Waiting for workers... (timeout 300s)
 Progress: 5/5 (5 ok, 0 fail) [XXs elapsed, ~0s remaining]
 
+=== Job Status Breakdown ===
+    completed: 5
+       failed: 0
+   processing: 0
+      pending: 0
+        total: 5
+
 === Simulation Report ===
 Total calls: 5
 Sale rate: X.X%
-Avg turns: X.X
 ...
 Report saved to: tests/simulation/reports/sim_report_XXXXXXXX_XXXXXX.json
 ```
@@ -661,11 +734,164 @@ Verify both workers pick up jobs (check their logs). Jobs should be split across
 
 ---
 
+### Task 6: Failure Scenario Validation
+
+These scenarios test the resilience features. Each should be run manually to observe the behavior.
+
+**Scenario A: Jobs without workers (queue durability)**
+
+This tests that Redis queues are durable — jobs enqueued without workers survive until a worker starts.
+
+```bash
+# Terminal 1: Dispatch with NO worker running. Set short timeout.
+cd backend
+python -m tests.simulation.dispatch --random 3 --timeout 10
+```
+
+Expected output:
+```
+Enqueued 3 simulation jobs (run abc12345)
+Waiting for workers... (timeout 10s)
+Timeout after 10s (0/3 completed)
+
+=== Job Status Breakdown ===
+    completed: 0
+       failed: 0
+   processing: 0
+      pending: 3  (never picked up)
+        total: 3
+
+No completed results to report.
+```
+
+Now start a worker — it should pick up those jobs:
+```bash
+cd backend
+python -m tests.simulation.worker --concurrency 3
+```
+
+Worker should immediately start processing the 3 pending jobs. Verify in worker logs.
+
+**Scenario B: Worker crash mid-job (stale job recovery)**
+
+This tests the `--recover` flag and stale job detection.
+
+```bash
+# Terminal 1: Start worker
+cd backend
+python -m tests.simulation.worker --concurrency 2
+
+# Terminal 2: Dispatch jobs
+cd backend
+python -m tests.simulation.dispatch --random 5 --timeout 300
+```
+
+While jobs are processing (watch worker logs — wait for 1-2 "starting" messages):
+```bash
+# Terminal 3: Force-kill the worker (simulates crash, no graceful shutdown)
+kill -9 $(pgrep -f "tests.simulation.worker")
+```
+
+The dispatcher will eventually show stale jobs:
+```
+Timeout after 300s (2/5 completed)
+
+=== Job Status Breakdown ===
+    completed: 2
+       failed: 0
+   processing: 2  (stale — worker likely crashed)
+      pending: 1  (never picked up)
+        total: 5
+
+WARNING: 2 jobs stuck in processing. Run a worker with --recover to re-enqueue them.
+```
+
+Now recover and re-run:
+```bash
+# Terminal 1: Start worker with --recover
+cd backend
+python -m tests.simulation.worker --concurrency 3 --recover
+```
+
+Expected:
+```
+... INFO [sim_worker] Recovered 2 stale jobs from processing queue
+... INFO [sim_worker] worker-xyz789 started (concurrency=3)
+... INFO [sim_worker] Job abc123: starting (...)
+```
+
+The recovered jobs + the pending job should now be processed.
+
+**Scenario C: Dispatcher timeout with partial results**
+
+This tests that partial results are still usable — you get a report from whatever completed.
+
+```bash
+# Terminal 1: Start worker with low concurrency (slow)
+cd backend
+python -m tests.simulation.worker --concurrency 1
+
+# Terminal 2: Dispatch many jobs with short timeout
+cd backend
+python -m tests.simulation.dispatch --random 10 --timeout 60
+```
+
+Expected: Dispatcher times out after 60s with partial progress. The report covers whatever finished:
+```
+Timeout after 60s (3/10 completed)
+
+=== Job Status Breakdown ===
+    completed: 3
+       failed: 0
+   processing: 1  (stale — worker likely crashed)
+      pending: 6  (never picked up)
+        total: 10
+
+=== Simulation Report ===
+Total calls: 3
+...
+```
+
+Note: The 1 "processing" job is not stale here — the worker is still running. The dispatcher just can't distinguish "actively processing" from "stale" without heartbeats. This is a known limitation documented in the design doc.
+
+**Scenario D: Graceful shutdown preserves in-flight results**
+
+This tests that Ctrl+C on the worker finishes in-flight jobs (no data loss).
+
+```bash
+# Terminal 1: Start worker
+cd backend
+python -m tests.simulation.worker --concurrency 5
+
+# Terminal 2: Dispatch
+cd backend
+python -m tests.simulation.dispatch --random 10 --timeout 300
+```
+
+Wait for a few "starting" messages in worker logs, then press Ctrl+C in Terminal 1.
+
+Expected in worker terminal:
+```
+... INFO [sim_worker] Shutdown requested
+... INFO [sim_worker] Draining 3 in-flight jobs...
+... INFO [sim_worker] Job xxx: done (...)
+... INFO [sim_worker] Job yyy: done (...)
+... INFO [sim_worker] Job zzz: done (...)
+... INFO [sim_worker] worker-abc123 stopped (completed=7, failed=0)
+```
+
+The in-flight jobs should complete (not be lost). Dispatcher should show their results. Remaining unstarted jobs stay in pending.
+
+---
+
 ## Run Commands Cheat Sheet
 
 ```bash
 # Start a worker (from backend/)
 python -m tests.simulation.worker --concurrency 10
+
+# Start with crash recovery (only when no other workers are running)
+python -m tests.simulation.worker --concurrency 10 --recover
 
 # Dispatch presets (5 personas, ~$2.30)
 python -m tests.simulation.dispatch --presets

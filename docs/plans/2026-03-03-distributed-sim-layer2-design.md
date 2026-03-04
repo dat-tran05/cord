@@ -74,10 +74,19 @@ Intentionally omitted. If a job fails (OpenAI error, timeout, etc.), it's marked
 2. Wait for in-flight tasks to complete (60s timeout)
 3. Any still-running jobs remain in `cord:sim:processing` — dispatcher reports them as "lost"
 
+### Stale Job Recovery on Startup
+
+When a worker crashes (SIGKILL, OOM, power loss), its in-flight jobs are left in `cord:sim:processing` forever — nobody will complete them, nobody will mark them failed. The run's progress counters stall.
+
+The worker supports a `--recover` flag that, on startup, moves all jobs from `cord:sim:processing` back to `cord:sim:pending` so they can be re-executed. This is the same RPOPLPUSH-in-reverse pattern used by the existing `TaskQueue._recover_processing()`.
+
+**Important tradeoff:** Because all workers share a single `cord:sim:processing` list, recovery moves ALL processing jobs — including ones another worker might be actively running. Only use `--recover` when you know no other workers are running. In production you'd use per-worker processing lists or heartbeat-based liveness detection, but the shared list is simpler and sufficient for learning the pattern.
+
 ### Entrypoint
 
 ```bash
-python -m app.sim_worker --concurrency 10 --redis-url redis://localhost:6379/0
+python -m tests.simulation.worker --concurrency 10
+python -m tests.simulation.worker --concurrency 5 --recover   # recover stale jobs first
 ```
 
 ---
@@ -160,47 +169,72 @@ Both dispatcher and worker import shared Redis helpers:
 | `mark_failed(redis, job_id, error)` | Worker | Save error + HINCRBY failed |
 | `get_run_progress(redis, run_id)` | Dispatcher | Read total/completed/failed |
 | `get_job_results(redis, job_ids)` | Dispatcher | Batch-fetch all completed results |
+| `recover_stale_jobs(redis)` | Worker | Move all processing → pending (crash recovery) |
+| `get_job_statuses(redis, job_ids)` | Dispatcher | Batch-fetch status of all jobs (for diagnostics) |
 
 ---
 
 ## File Layout
 
 ```
-backend/
-├── app/
-│   └── sim_worker.py              # Standalone worker process
-└── tests/
-    └── simulation/
-        ├── dispatch.py            # CLI dispatcher
-        ├── sim_queue.py           # Shared Redis queue protocol
-        ├── call_runner.py         # (existing, unchanged)
-        ├── simulator.py           # (existing, unchanged)
-        ├── judge.py               # (existing, unchanged)
-        ├── personas.py            # (existing, unchanged)
-        ├── metrics.py             # (existing, unchanged)
-        └── conftest.py            # (existing, unchanged)
+backend/tests/simulation/
+├── sim_queue.py           # NEW — Shared Redis queue protocol (+ recovery)
+├── worker.py              # NEW — Standalone async worker process
+├── dispatch.py            # NEW — CLI dispatcher (+ diagnostics)
+├── call_runner.py         # (existing, unchanged)
+├── simulator.py           # (existing, unchanged)
+├── judge.py               # (existing, unchanged)
+├── personas.py            # (existing, unchanged)
+├── metrics.py             # (existing, unchanged)
+├── conftest.py            # (existing, unchanged)
+└── test_simulated_call.py # (existing, unchanged)
 ```
 
 ---
 
-## Error Handling
+## Resilience & Failure Recovery
 
-| Failure mode | Behavior |
-|---|---|
-| Worker crashes mid-job | Jobs in `cord:sim:processing` are "lost." Dispatcher detects them after timeout. |
-| OpenAI API error (single call) | Job marked `failed`. Other jobs continue. Reported in summary. |
-| OpenAI rate limit | Concurrent calls fail fast, semaphore slots free up, worker naturally backs off. |
-| Redis connection lost | Worker/dispatcher crash. Restart — `pending` jobs are still queued, `processing` jobs recoverable. |
-| Ctrl+C on worker | Graceful shutdown: finish in-flight, then exit. |
+### Failure Modes
+
+| Failure mode | What breaks | Recovery |
+|---|---|---|
+| **Worker crash (SIGKILL/OOM)** | Jobs stuck in `cord:sim:processing`. Run progress stalls — `completed + failed < total`. | Start new worker with `--recover`. Moves stale processing jobs back to pending for re-execution. |
+| **Worker crash after CallRunner, before store_result** | Same as above — simulation ran but result was never saved. The simulation cost is lost. | Same `--recover` mechanism. Job re-runs from scratch (idempotent — just costs another API call). |
+| **OpenAI API error (single job)** | Job marked `failed`. Run counter incremented. Other jobs continue normally. | Dispatcher reports failure count + error details in summary. No automatic retry. |
+| **OpenAI rate limit (429)** | Multiple concurrent jobs fail fast with 429 errors. Semaphore slots free immediately. | Worker naturally backs off — failed jobs free semaphore, next pulls succeed at lower concurrency. Dispatcher shows failures. |
+| **No workers running** | Jobs sit in `cord:sim:pending` indefinitely. Dispatcher polls, eventually times out. | Jobs are durable in Redis. Start a worker anytime — it will pick them up. |
+| **Dispatcher timeout** | Partial results collected. Some jobs may still be processing or pending. | Dispatcher reports breakdown: completed, failed, still processing, still pending. Report covers whatever finished. |
+| **Redis goes down** | Everything crashes. No data loss if Redis has persistence (AOF/RDB). | Restart Redis. `pending` list intact. `processing` jobs need `--recover`. |
+| **Ctrl+C on worker (SIGINT)** | Graceful shutdown: stops pulling, waits for in-flight jobs (120s timeout), then exits cleanly. | No recovery needed — in-flight jobs finish normally. |
+| **Ctrl+C during drain timeout** | In-flight jobs may not finish. Left in `processing`. | Next worker startup with `--recover` handles them. |
+
+### Dispatcher Post-Run Diagnostics
+
+After timeout or completion, the dispatcher reports a breakdown of all jobs:
+
+```
+=== Job Status Breakdown ===
+  Completed: 43
+  Failed:     2  (api_error: 2)
+  Processing:  3  (stale — worker likely crashed)
+  Pending:     2  (never picked up)
+  Total:      50
+
+WARNING: 3 jobs stuck in processing. Run a worker with --recover to re-enqueue them.
+```
+
+This makes it immediately clear what happened and what to do about it.
 
 ---
 
 ## What We Skip (YAGNI)
 
-- No retry logic in worker (dispatcher can re-enqueue manually)
+- No automatic retry logic in worker (failed = failed; dispatcher reports it)
+- No per-worker processing lists (shared list + `--recover` flag is sufficient for learning)
+- No heartbeat-based liveness detection (would need background task + TTL; overkill here)
 - No health check endpoints (just check if process is running)
 - No Prometheus/Grafana metrics (console output for learning)
-- No dead letter queue (failed jobs in hash, dispatcher reports them)
+- No dead letter queue (failed jobs stay in hash, dispatcher reports them)
 - No Docker (separate Python processes for development)
 - No modifications to production code (app/services/task_queue.py, handlers.py untouched)
 
@@ -226,7 +260,7 @@ redis-server
 
 # Terminal 2: Worker (10 concurrent simulations)
 cd backend
-python -m app.sim_worker --concurrency 10
+python -m tests.simulation.worker --concurrency 10
 
 # Terminal 3: Dispatcher (50 random personas)
 cd backend
@@ -235,7 +269,11 @@ python -m tests.simulation.dispatch --random 50 --seed 42
 # Optional: second worker for more throughput
 # Terminal 4:
 cd backend
-python -m app.sim_worker --concurrency 10
+python -m tests.simulation.worker --concurrency 10
+
+# Recovery after a crash
+cd backend
+python -m tests.simulation.worker --concurrency 10 --recover
 ```
 
 ## Success Criteria
@@ -245,3 +283,6 @@ python -m app.sim_worker --concurrency 10
 3. Running 2 workers doubles throughput compared to 1 worker
 4. Worker handles Ctrl+C gracefully (finishes in-flight, doesn't lose results)
 5. Failed jobs are reported without crashing the run
+6. After worker crash: `--recover` moves stale processing jobs back to pending
+7. Dispatcher shows diagnostic breakdown (completed/failed/processing/pending) on timeout
+8. Jobs dispatched without workers are durable — start worker later, jobs still process
