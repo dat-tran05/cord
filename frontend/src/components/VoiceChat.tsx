@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Mic, MicOff, PhoneOff, Send } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ interface VoiceChatProps {
 }
 
 export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
+  const router = useRouter();
   const {
     connected,
     error,
@@ -49,8 +51,8 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
 
   const handleEnd = () => {
     stop();
-    setEnded(true);
     onEnd?.();
+    router.push("/");
   };
 
   return (

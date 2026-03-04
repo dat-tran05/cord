@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, PhoneOff } from "lucide-react";
 import Link from "next/link";
 import { api, type CallDetail } from "@/lib/api";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 function CallTranscriptView({ call, id }: { call: CallDetail; id: string }) {
+  const router = useRouter();
   const [localCall, setLocalCall] = useState(call);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -23,7 +24,7 @@ function CallTranscriptView({ call, id }: { call: CallDetail; id: string }) {
 
   const endCall = async () => {
     await api.calls.end(id);
-    setLocalCall((prev) => ({ ...prev, is_active: false }));
+    router.push("/");
   };
 
   return (
