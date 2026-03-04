@@ -7,6 +7,12 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import dynamic from "next/dynamic";
+
+const VoiceOrb = dynamic(
+  () => import("@/components/VoiceOrb").then((mod) => mod.VoiceOrb),
+  { ssr: false }
+);
 
 interface VoiceChatProps {
   callId: string;
@@ -25,6 +31,9 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
     sendText,
     start,
     stop,
+    outputVolume,
+    inputVolume,
+    isSpeaking,
   } = useVoiceChat(callId);
 
   const [input, setInput] = useState("");
@@ -116,37 +125,50 @@ export function VoiceChat({ callId, targetProfile, onEnd }: VoiceChatProps) {
         </div>
       )}
 
-      {/* Transcript */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="mx-auto max-w-2xl space-y-4">
-          {transcript.length === 0 && !ended && (
-            <p className="text-center text-sm text-muted-foreground pt-12">
-              {connected
-                ? "Waiting for conversation to begin..."
-                : "Connecting to voice service..."}
-            </p>
-          )}
-          {transcript.map((msg, i) => (
-            <div
-              key={i}
-              className={cn(
-                "flex",
-                msg.role === "agent" ? "justify-start" : "justify-end"
-              )}
-            >
+      {/* Two-panel body: orb (35%) | transcript (65%) */}
+      <div className="flex flex-1 min-h-0">
+        {/* Orb panel */}
+        <div className="w-[35%] border-r border-border/60">
+          <VoiceOrb
+            outputVolume={outputVolume}
+            inputVolume={inputVolume}
+            isSpeaking={isSpeaking}
+            ended={ended}
+          />
+        </div>
+
+        {/* Transcript panel */}
+        <div className="w-[65%] overflow-y-auto px-4 py-6">
+          <div className="mx-auto max-w-2xl space-y-4">
+            {transcript.length === 0 && !ended && (
+              <p className="text-center text-sm text-muted-foreground pt-12">
+                {connected
+                  ? "Waiting for conversation to begin..."
+                  : "Connecting to voice service..."}
+              </p>
+            )}
+            {transcript.map((msg, i) => (
               <div
+                key={i}
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-                  msg.role === "agent"
-                    ? "bg-card text-card-foreground border border-border/50"
-                    : "bg-primary text-primary-foreground"
+                  "flex",
+                  msg.role === "agent" ? "justify-start" : "justify-end"
                 )}
               >
-                {msg.text}
+                <div
+                  className={cn(
+                    "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                    msg.role === "agent"
+                      ? "bg-card text-card-foreground border border-border/50"
+                      : "bg-primary text-primary-foreground"
+                  )}
+                >
+                  {msg.text}
+                </div>
               </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
       </div>
 

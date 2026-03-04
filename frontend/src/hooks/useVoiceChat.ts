@@ -8,6 +8,20 @@ function getWsUrl(callId: string): string {
   return `${base}/ws/voice/${callId}`;
 }
 
+const EMA_DECAY = 0.85;
+
+function computeRMS(samples: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sum += samples[i] * samples[i];
+  }
+  return Math.sqrt(sum / samples.length);
+}
+
+function smooth(previous: number, current: number): number {
+  return EMA_DECAY * previous + (1 - EMA_DECAY) * current;
+}
+
 export interface TranscriptEntry {
   role: "agent" | "user";
   text: string;
@@ -23,6 +37,9 @@ export function useVoiceChat(callId: string) {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
 
   const [micActive, setMicActive] = useState(false);
+  const [outputVolume, setOutputVolume] = useState(0);
+  const [inputVolume, setInputVolume] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -30,7 +47,11 @@ export function useVoiceChat(callId: string) {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const playbackContextRef = useRef<AudioContext | null>(null);
   const playbackTimeRef = useRef(0);
+  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const startedRef = useRef(false);
+  const outputVolumeRef = useRef(0);
+  const inputVolumeRef = useRef(0);
+  const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Connect WebSocket
   useEffect(() => {
@@ -64,6 +85,9 @@ export function useVoiceChat(callId: string) {
           case "audio":
             playAudioChunk(data.audio);
             break;
+          case "clear_audio":
+            clearAudio();
+            break;
           case "error":
             setError(data.message);
             break;
@@ -86,6 +110,7 @@ export function useVoiceChat(callId: string) {
       stopMicCapture();
       micContextRef.current?.close();
       playbackContextRef.current?.close();
+      if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -111,6 +136,21 @@ export function useVoiceChat(callId: string) {
       float32[i] = pcm16[i] / 32768;
     }
 
+    // Compute output volume from decoded audio
+    const rms = computeRMS(float32);
+    const smoothed = smooth(outputVolumeRef.current, Math.min(rms * 5, 1));
+    outputVolumeRef.current = smoothed;
+    setOutputVolume(smoothed);
+
+    // Mark as speaking, reset timeout
+    setIsSpeaking(true);
+    if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
+    speakingTimeoutRef.current = setTimeout(() => {
+      setIsSpeaking(false);
+      outputVolumeRef.current = 0;
+      setOutputVolume(0);
+    }, 300);
+
     const buffer = ctx.createBuffer(1, float32.length, 24000);
     buffer.copyToChannel(float32, 0);
 
@@ -122,6 +162,27 @@ export function useVoiceChat(callId: string) {
     const startTime = Math.max(now, playbackTimeRef.current);
     source.start(startTime);
     playbackTimeRef.current = startTime + buffer.duration;
+
+    // Track for interruption flushing
+    activeSourcesRef.current.push(source);
+    source.onended = () => {
+      activeSourcesRef.current = activeSourcesRef.current.filter(
+        (s) => s !== source
+      );
+    };
+  }, []);
+
+  // Flush all queued audio (called on user interruption)
+  const clearAudio = useCallback(() => {
+    activeSourcesRef.current.forEach((s) => {
+      try {
+        s.stop();
+      } catch {
+        // already stopped
+      }
+    });
+    activeSourcesRef.current = [];
+    playbackTimeRef.current = 0;
   }, []);
 
   // Start mic capture
@@ -149,6 +210,13 @@ export function useVoiceChat(callId: string) {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
+
+        // Compute input volume from mic audio
+        const micRms = computeRMS(float32);
+        const micSmoothed = smooth(inputVolumeRef.current, Math.min(micRms * 5, 1));
+        inputVolumeRef.current = micSmoothed;
+        setInputVolume(micSmoothed);
+
         // Float32 to PCM16 little-endian
         const pcm16 = new Int16Array(float32.length);
         for (let i = 0; i < float32.length; i++) {
@@ -185,6 +253,8 @@ export function useVoiceChat(callId: string) {
     micContextRef.current?.close();
     micContextRef.current = null;
 
+    inputVolumeRef.current = 0;
+    setInputVolume(0);
     setMicActive(false);
   }, []);
 
@@ -237,5 +307,8 @@ export function useVoiceChat(callId: string) {
     sendText,
     start,
     stop,
+    outputVolume,
+    inputVolume,
+    isSpeaking,
   };
 }
